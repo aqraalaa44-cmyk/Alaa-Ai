@@ -9,7 +9,7 @@ const LOCAL_IP = "192.168.1.26";
 const PORT = "3000";
 
 const PUBLIC_SERVER_URL =
-  "https://provided-memphis-immigration-labor.trycloudflare.com";
+  "https://next-ebony-terrain-planned.trycloudflare.com";
 
 const SERVER_URL =
   Platform.OS === "web"
