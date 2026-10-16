@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Alaa :)",
+    "slug": "alaa-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B1118",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1118"
+    },
+    "android": {
+      "package": "com.alaa.ai",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1118"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7961c8f3-bbf0-4c63-85e2-7214198f4bed"
+      }
+    },
+    "owner": "alaaaqraa-team"
+  }
+}
