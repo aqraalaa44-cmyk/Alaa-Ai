@@ -1,4 +1,3 @@
-
 import { Platform } from "react-native";
 
 /**
@@ -9,7 +8,7 @@ const LOCAL_IP = "192.168.1.26";
 const PORT = "3000";
 
 const PUBLIC_SERVER_URL =
-  "https://wins-organ-david-got.trycloudflare.com";
+  "https://mai-commission-forth-responsibility.trycloudflare.com";
 
 const SERVER_URL =
   Platform.OS === "web"
