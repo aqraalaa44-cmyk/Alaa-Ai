@@ -16,6 +16,12 @@ const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024;
+const MAX_MESSAGE_LENGTH = 20000;
+const MAX_IMAGE_BASE64_LENGTH = 5600000;
+
+// إعداد الاتصال من واجهات الويب والموبايل
+app.use(cors());
+app.use(express.json({ limit: "8mb" }));
 
 const IMAGE_TYPES = {
   ".jpg": "image/jpeg",
@@ -35,7 +41,7 @@ const ALLOWED_MIME_TYPES = new Set(
   Object.values(IMAGE_TYPES)
 );
 
-// تعليمات Alaa AI الشاملة
+// تعليمات Alaa AI
 const SYSTEM_INSTRUCTION = `
 # 1. الهوية والشخصية
 
@@ -416,6 +422,82 @@ function addInlineCitations(answer, metadata, sources) {
   return result;
 }
 
+// توحيد تنسيقات الرسائل القديمة والجديدة
+function normalizeIncomingMessages(body) {
+  const source = Array.isArray(body?.messages)
+    ? body.messages
+    : Array.isArray(body?.history)
+      ? body.history
+      : [];
+
+  const messages = source
+    .filter((message) => message && typeof message === "object")
+    .map((message) => {
+      let role;
+
+      if (message.role === "user") {
+        role = "user";
+      } else if (
+        ["assistant", "ai", "model"].includes(message.role)
+      ) {
+        role = "assistant";
+      } else {
+        return null;
+      }
+
+      const content =
+        typeof message.content === "string"
+          ? message.content
+          : typeof message.text === "string"
+            ? message.text
+            : "";
+
+      const imageBase64 =
+        typeof message.imageBase64 === "string" &&
+        message.imageBase64.length <= MAX_IMAGE_BASE64_LENGTH &&
+        ALLOWED_MIME_TYPES.has(message.mimeType)
+          ? message.imageBase64
+          : null;
+
+      if (!content.trim() && !imageBase64) {
+        return null;
+      }
+
+      return {
+        role,
+        content: content.slice(0, MAX_MESSAGE_LENGTH),
+        imageBase64,
+        mimeType: imageBase64 ? message.mimeType : null,
+      };
+    })
+    .filter(Boolean);
+
+  // التوافق مع الواجهة القديمة التي ترسل message وhistory
+  const currentMessage =
+    typeof body?.message === "string"
+      ? body.message.trim()
+      : "";
+
+  if (currentMessage) {
+    const lastMessage = messages[messages.length - 1];
+
+    const alreadyIncluded =
+      lastMessage?.role === "user" &&
+      lastMessage.content.trim() === currentMessage;
+
+    if (!alreadyIncluded) {
+      messages.push({
+        role: "user",
+        content: currentMessage.slice(0, MAX_MESSAGE_LENGTH),
+        imageBase64: null,
+        mimeType: null,
+      });
+    }
+  }
+
+  return messages.slice(-12);
+}
+
 // فحص حالة الخادم
 app.get("/", (_req, res) => {
   res.json({
@@ -433,6 +515,14 @@ app.get("/", (_req, res) => {
   });
 });
 
+// فحص صحة الخادم
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "Alaa AI Server",
+  });
+});
+
 // استقبال الملفات والصور
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
@@ -443,7 +533,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     const ext = path.extname(req.file.originalname).toLowerCase();
-    const name = req.file.originalname;
+    const name = path.basename(req.file.originalname);
 
     if (IMAGE_TYPES[ext]) {
       return res.json({
@@ -500,45 +590,11 @@ app.post("/chat", async (req, res) => {
 
     if (!apiKey) {
       return res.status(503).json({
-        error: "أضف GEMINI_API_KEY في إعدادات Render.",
+        error: "أضف GEMINI_API_KEY في إعدادات الخادم.",
       });
     }
 
-    const incoming = Array.isArray(req.body?.messages)
-      ? req.body.messages
-      : [];
-
-    const messages = incoming
-      .filter(
-        (message) =>
-          message &&
-          ["user", "assistant"].includes(message.role) &&
-          typeof message.content === "string"
-      )
-      .slice(-12)
-      .map((message) => {
-        const parts = [
-          { text: message.content.slice(0, 20000) },
-        ];
-
-        if (
-          typeof message.imageBase64 === "string" &&
-          message.imageBase64.length <= 5600000 &&
-          ALLOWED_MIME_TYPES.has(message.mimeType)
-        ) {
-          parts.push({
-            inline_data: {
-              mime_type: message.mimeType,
-              data: message.imageBase64,
-            },
-          });
-        }
-
-        return {
-          role: message.role === "assistant" ? "model" : "user",
-          parts,
-        };
-      });
+    const messages = normalizeIncomingMessages(req.body);
 
     const firstUserIndex = messages.findIndex(
       (message) => message.role === "user"
@@ -546,11 +602,38 @@ app.post("/chat", async (req, res) => {
 
     if (firstUserIndex === -1) {
       return res.status(400).json({
-        error: "اكتب سؤالًا أو أرفق ملفًا أولًا.",
+        error: "اكتب سؤالًا أو أرفق صورة أولًا.",
       });
     }
 
-    const contents = messages.slice(firstUserIndex);
+    const normalizedContents = messages.slice(firstUserIndex);
+
+    const contents = normalizedContents.map((message) => {
+      const parts = [];
+
+      if (message.content.trim()) {
+        parts.push({
+          text: message.content,
+        });
+      }
+
+      if (
+        message.imageBase64 &&
+        ALLOWED_MIME_TYPES.has(message.mimeType)
+      ) {
+        parts.push({
+          inline_data: {
+            mime_type: message.mimeType,
+            data: message.imageBase64,
+          },
+        });
+      }
+
+      return {
+        role: message.role === "assistant" ? "model" : "user",
+        parts,
+      };
+    });
 
     const currentDateTime = new Intl.DateTimeFormat("ar-JO", {
       dateStyle: "full",
@@ -599,6 +682,7 @@ ${currentDateTime}
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
+      // لا نسجّل المفتاح السري أو نعيده إلى الواجهة
       console.error("Gemini API error:", {
         status: response.status,
         message: data.error?.message,
@@ -618,7 +702,7 @@ ${currentDateTime}
           "مفتاح Gemini غير صالح أو لا يملك الصلاحية المطلوبة.";
       } else if (response.status === 429) {
         errorMessage =
-          "وصلت إلى حد الاستخدام أو حصة البحث المتاحة.";
+          "وصلت إلى حد الاستخدام أو حصة الطلبات المتاحة.";
       }
 
       return res.status(502).json({
@@ -682,7 +766,7 @@ ${currentDateTime}
   }
 });
 
-// معالجة أخطاء الملفات والطلبات
+// معالجة أخطاء رفع الملفات والطلبات
 app.use((error, _req, res, _next) => {
   console.error("Request error:", error.message);
 
@@ -698,12 +782,21 @@ app.use((error, _req, res, _next) => {
     });
   }
 
+  const errorMessage =
+    typeof error.message === "string" ? error.message : "";
+
   if (
-    error.message.startsWith("الملفات المدعومة:") ||
-    error.message === "نوع الصورة لا يتوافق مع امتدادها."
+    errorMessage.startsWith("الملفات المدعومة:") ||
+    errorMessage === "نوع الصورة لا يتوافق مع امتدادها."
   ) {
     return res.status(400).json({
-      error: error.message,
+      error: errorMessage,
+    });
+  }
+
+  if (error.type === "entity.too.large") {
+    return res.status(413).json({
+      error: "حجم الطلب أكبر من الحد المسموح.",
     });
   }
 
@@ -718,6 +811,8 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(
     `Gemini API configured: ${Boolean(process.env.GEMINI_API_KEY)}`
   );
+  console.log("CORS enabled");
+  console.log("JSON request parsing enabled");
   console.log("Google Search enabled");
   console.log("Education and homework help enabled");
   console.log("Sports information enabled");
