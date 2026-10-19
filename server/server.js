@@ -782,14 +782,19 @@ ${searchInstruction}
         });
       }
 
-      return res.status(502).json({
-        error:
-          "تعذر الحصول على إجابة من Gemini. تحقق من اسم النموذج والإعدادات.",
-        reply: null,
-        sources: [],
-        searched: false,
-        model: GEMINI_MODEL,
-      });
+    
+return res.status(502).json({
+  error: "فشل طلب Gemini.",
+  details:
+    data?.error?.message ||
+    `Gemini returned HTTP ${response.status}`,
+  providerStatus: data?.error?.status || null,
+  model: GEMINI_MODEL,
+  reply: null,
+  sources: [],
+  searched: false,
+});
+
     }
 
     const candidate = data.candidates?.[0];
