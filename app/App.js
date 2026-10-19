@@ -101,6 +101,7 @@ const TRANSLATIONS = {
     historySaved: "محفوظ محليًا على هذا الجهاز",
     untitled: "محادثة جديدة",
   },
+
   en: {
     status: "Online now",
     newChat: "New chat",
@@ -792,9 +793,7 @@ export default function App() {
       </View>
 
       <Pressable style={styles.newChatButton} onPress={startNewChat}>
-        <Text style={styles.newChatButtonText}>
-          ＋ {t.newChat}
-        </Text>
+        <Text style={styles.newChatButtonText}>＋ {t.newChat}</Text>
       </Pressable>
 
       <ScrollView
@@ -885,27 +884,22 @@ export default function App() {
             <View
               style={[
                 styles.brandBlock,
-                {
-                  alignItems: isRTL ? "flex-end" : "flex-start",
-                },
+                { alignItems: isRTL ? "flex-end" : "flex-start" },
               ]}
             >
               <View style={styles.brandLine}>
-                {/* شعار AI الجديد بدل النجمة */}
+                {/* شعار AI بجانب اسم Alaa :) */}
                 <View style={styles.logoBadge}>
                   <Text style={styles.logoBadgeText}>AI</Text>
                 </View>
 
-                {/* اسم Alaa :) بجانب الشعار */}
                 <Text style={styles.logo}>Alaa :)</Text>
               </View>
 
               <View
                 style={[
                   styles.statusRow,
-                  {
-                    flexDirection: isRTL ? "row-reverse" : "row",
-                  },
+                  { flexDirection: isRTL ? "row-reverse" : "row" },
                 ]}
               >
                 <View style={styles.onlineDot} />
@@ -948,9 +942,7 @@ export default function App() {
                 accessibilityRole="button"
               >
                 <Text style={styles.headerButtonIcon}>＋</Text>
-                <Text style={styles.headerButtonText}>
-                  {t.newChat}
-                </Text>
+                <Text style={styles.headerButtonText}>{t.newChat}</Text>
               </Pressable>
             </View>
           </View>
@@ -967,7 +959,15 @@ export default function App() {
             >
               {messages.length === 0 && (
                 <View style={styles.welcomeCard}>
-                  <Text style={styles.welcomeSpark}>✦</Text>
+                  {/* صورة الشاب بدل النجمة */}
+                  <Image
+                    source={{
+                      uri: "https://images.unsplash.com/photo-1654110455429-cf322b40a906?auto=format&fit=crop&fm=jpg&q=80&w=500",
+                    }}
+                    style={styles.welcomeAvatar}
+                    resizeMode="cover"
+                    accessibilityLabel="Alaa AI avatar"
+                  />
 
                   <Text
                     style={[
@@ -1087,7 +1087,6 @@ export default function App() {
 
                             {item.sources.map((source, index) => {
                               const url = safeSourceUrl(source?.url);
-
                               if (!url) return null;
 
                               return (
@@ -1188,9 +1187,7 @@ export default function App() {
               <View
                 style={[
                   styles.pendingAttachmentBar,
-                  {
-                    flexDirection: isRTL ? "row-reverse" : "row",
-                  },
+                  { flexDirection: isRTL ? "row-reverse" : "row" },
                 ]}
               >
                 <Image
@@ -1223,9 +1220,7 @@ export default function App() {
               <View
                 style={[
                   styles.pendingAttachmentBar,
-                  {
-                    flexDirection: isRTL ? "row-reverse" : "row",
-                  },
+                  { flexDirection: isRTL ? "row-reverse" : "row" },
                 ]}
               >
                 <View style={styles.pendingFileIconBox}>
@@ -1499,7 +1494,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  // تصميم شعار AI الجديد
+  // شعار AI البنفسجي بجانب اسم Alaa :)
   logoBadge: {
     width: 38,
     height: 38,
@@ -1589,10 +1584,17 @@ const styles = StyleSheet.create({
     borderColor: "#2B3150",
     backgroundColor: "#141A30",
   },
-  welcomeSpark: {
-    color: "#B9A0FF",
-    fontSize: 34,
-    marginBottom: 12,
+
+  // صورة الشاب بدل النجمة في بطاقة الترحيب
+  welcomeAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#7662F0",
+    backgroundColor: "#141A30",
+    alignSelf: "center",
   },
   welcomeTitle: {
     color: "#F3F1FF",
