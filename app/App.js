@@ -670,4 +670,481 @@ export default function App() {
       typedText ||
       (pendingFile
         ? `${labels.attachedFile}: ${pendingFile.name}`
-        : t
+        : t.describeImage);
+
+    const userMessage = {
+      id: makeId(),
+      role: "user",
+      text: displayText,
+      imageUri: pendingImage?.uri || null,
+      imageName: pendingImage?.name || null,
+      imageBase64: pendingImage?.base64 || null,
+      mimeType: pendingImage?.mimeType || null,
+      fileName: pendingFile?.name || null,
+      fileMimeType: pendingFile?.mimeType || null,
+      documentContext: pendingFile?.extractedText || null,
+      sources: [],
+    };
+
+    const updatedMessages = [...messages, userMessage];
+
+    setActiveConversationId(conversationId);
+    setMessages(updatedMessages);
+    setInput("");
+    setPendingImage(null);
+    setPendingFile(null);
+    setAttachmentError("");
+    setNetworkError("");
+    setLoading(true);
+
+    try {
+      const history = updatedMessages.slice(-12);
+
+      let lastImageIndex = -1;
+
+      history.forEach((item, index) => {
+        if (item.imageBase64) {
+          lastImageIndex = index;
+        }
+      });
+
+      const apiMessages = history.map((item, index) => {
+        let content = item.text || "";
+
+        if (item.documentContext) {
+          content +=
+            `\n\n[Extracted text from attached file: ${item.fileName || "document"}]\n` +
+            item.documentContext;
+        }
+
+        return {
+          role: item.role,
+          content,
+          ...(item.imageBase64 && index === lastImageIndex
+            ? {
+                imageBase64: item.imageBase64,
+                mimeType: item.mimeType,
+              }
+            : {}),
+        };
+      });
+
+      const response = await fetch(`${baseUrl}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: apiMessages,
+          language,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error(t.quotaError);
+        }
+
+        throw new Error(data.error || t.serverError);
+      }
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text:
+            typeof data.reply === "string" ? data.reply : t.serverError,
+          sources: Array.isArray(data.sources) ? data.sources : [],
+          searched: Boolean(data.searched),
+          searchNotice:
+            typeof data.searchNotice === "string" ? data.searchNotice : "",
+        },
+      ]);
+    } catch (err) {
+      setNetworkError(err?.message || t.networkError);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const historyPanel = (
+    <View
+      style={[
+        styles.historySidebar,
+        !showDesktopHistory && styles.mobileHistoryPanel,
+      ]}
+    >
+      <View style={styles.historyHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.historyTitle}>{labels.history}</Text>
+          <Text style={styles.historySubtitle}>
+            {labels.historySaved}
+          </Text>
+        </View>
+
+        {!showDesktopHistory && (
+          <Pressable
+            onPress={() => setHistoryModalVisible(false)}
+            style={styles.closeHistoryButton}
+          >
+            <Text style={styles.closeHistoryText}>×</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <Pressable style={styles.newChatButton} onPress={startNewChat}>
+        <Text style={styles.newChatButtonText}>
+          ＋ {t.newChat}
+        </Text>
+      </Pressable>
+
+      <ScrollView
+        style={styles.historyList}
+        contentContainerStyle={styles.historyListContent}
+      >
+        {conversations.length === 0 ? (
+          <Text style={styles.emptyHistory}>
+            {labels.emptyHistory}
+          </Text>
+        ) : (
+          conversations
+            .slice()
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .map((conversation) => {
+              const previewMessage = [
+                ...(conversation.messages || []),
+              ]
+                .reverse()
+                .find((item) => item.role === "user");
+
+              const preview =
+                conversation.title ||
+                previewMessage?.text ||
+                labels.untitled;
+
+              return (
+                <View
+                  key={conversation.id}
+                  style={[
+                    styles.historyItem,
+                    conversation.id === activeConversationId &&
+                      styles.historyItemActive,
+                  ]}
+                >
+                  <Pressable
+                    style={styles.historyItemOpen}
+                    onPress={() => openConversation(conversation)}
+                    accessibilityRole="button"
+                  >
+                    <Text
+                      style={styles.historyItemTitle}
+                      numberOfLines={1}
+                    >
+                      {preview}
+                    </Text>
+
+                    <Text
+                      style={styles.historyItemPreview}
+                      numberOfLines={2}
+                    >
+                      {previewMessage?.text || labels.untitled}
+                    </Text>
+
+                    {previewMessage?.fileName ? (
+                      <Text style={styles.historyAttachment}>
+                        📎 {previewMessage.fileName}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.deleteChatButton}
+                    onPress={() => deleteConversation(conversation.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={labels.deleteChat}
+                  >
+                    <Text style={styles.deleteChatText}>×</Text>
+                  </Pressable>
+                </View>
+              );
+            })
+        )}
+      </ScrollView>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.workspace}>
+        <View style={styles.chatColumn}>
+          <View
+            style={[
+              styles.header,
+              { flexDirection: isRTL ? "row-reverse" : "row" },
+            ]}
+          >
+            <View
+              style={[
+                styles.brandBlock,
+                {
+                  alignItems: isRTL ? "flex-end" : "flex-start",
+                },
+              ]}
+            >
+              <View style={styles.brandLine}>
+                {/* شعار AI بدل النجمة */}
+                <View style={styles.logoBadge}>
+                  <Text style={styles.logoBadgeText}>AI</Text>
+                </View>
+
+                <Text style={styles.logo}>Alaa :)</Text>
+              </View>
+
+              <View
+                style={[
+                  styles.statusRow,
+                  {
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                  },
+                ]}
+              >
+                <View style={styles.onlineDot} />
+                <Text style={styles.statusText}>{t.status}</Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.headerActions,
+                { flexDirection: isRTL ? "row-reverse" : "row" },
+              ]}
+            >
+              {!showDesktopHistory && (
+                <Pressable
+                  style={styles.headerButton}
+                  onPress={() => setHistoryModalVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={labels.openHistory}
+                >
+                  <Text style={styles.headerButtonIcon}>☷</Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                style={styles.headerButton}
+                onPress={() => setLanguageModalVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel={t.chooseLanguage}
+              >
+                <Text style={styles.headerButtonIcon}>🌐</Text>
+                <Text style={styles.headerButtonText}>
+                  {selectedLanguage.code.toUpperCase()}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.headerButton}
+                onPress={startNewChat}
+                accessibilityRole="button"
+              >
+                <Text style={styles.headerButtonIcon}>＋</Text>
+                <Text style={styles.headerButtonText}>
+                  {t.newChat}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <KeyboardAvoidingView
+            style={styles.body}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <ScrollView
+              ref={scrollRef}
+              style={styles.chatScroll}
+              contentContainerStyle={styles.chatContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {messages.length === 0 && (
+                <View style={styles.welcomeCard}>
+                  {/* صورة الشاب التي أرسلتها بدل النجمة */}
+                  <Image
+                    source={require("./assets/alaa-ai-avatar.png")}
+                    style={styles.welcomeAvatar}
+                    resizeMode="cover"
+                    accessibilityLabel="Alaa AI avatar"
+                  />
+
+                  <Text
+                    style={[
+                      styles.welcomeTitle,
+                      { textAlign: textAlignment },
+                    ]}
+                  >
+                    {t.welcomeTitle}
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.welcomeBody,
+                      { textAlign: textAlignment },
+                    ]}
+                  >
+                    {t.welcomeBody}
+                  </Text>
+                </View>
+              )}
+
+              {messages.map((item) => {
+                const isUser = item.role === "user";
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.messageRow,
+                      {
+                        justifyContent: isUser
+                          ? "flex-end"
+                          : "flex-start",
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.bubble,
+                        isUser ? styles.userBubble : styles.aiBubble,
+                      ]}
+                    >
+                      {!!item.imageUri && (
+                        <Image
+                          source={{ uri: item.imageUri }}
+                          style={styles.chatImage}
+                          resizeMode="cover"
+                          accessibilityLabel={t.attach}
+                        />
+                      )}
+
+                      {!!item.imageName && !item.imageUri && (
+                        <View style={styles.messageFileCard}>
+                          <Text style={styles.messageFileIcon}>🖼️</Text>
+
+                          <View style={styles.messageFileTextArea}>
+                            <Text
+                              style={styles.messageFileName}
+                              numberOfLines={2}
+                            >
+                              {item.imageName}
+                            </Text>
+
+                            <Text style={styles.messageFileType}>
+                              {t.attach}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {!!item.fileName && (
+                        <View style={styles.messageFileCard}>
+                          <Text style={styles.messageFileIcon}>📄</Text>
+
+                          <View style={styles.messageFileTextArea}>
+                            <Text
+                              style={styles.messageFileName}
+                              numberOfLines={2}
+                            >
+                              {item.fileName}
+                            </Text>
+
+                            <Text style={styles.messageFileType}>
+                              {item.fileMimeType || "Document"}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {!!item.text && (
+                        <Text
+                          selectable
+                          style={[
+                            styles.messageText,
+                            {
+                              textAlign: textAlignment,
+                              writingDirection: isRTL ? "rtl" : "ltr",
+                            },
+                          ]}
+                        >
+                          {item.text}
+                        </Text>
+                      )}
+
+                      {!isUser &&
+                        Array.isArray(item.sources) &&
+                        item.sources.length > 0 && (
+                          <View style={styles.sourcesBlock}>
+                            <Text
+                              style={[
+                                styles.sourcesTitle,
+                                { textAlign: textAlignment },
+                              ]}
+                            >
+                              {t.sources}
+                            </Text>
+
+                            {item.sources.map((source, index) => {
+                              const url = safeSourceUrl(source?.url);
+
+                              if (!url) return null;
+
+                              return (
+                                <Pressable
+                                  key={`${url}-${index}`}
+                                  onPress={() => openSource(url)}
+                                  style={[
+                                    styles.sourceLink,
+                                    {
+                                      flexDirection: isRTL
+                                        ? "row-reverse"
+                                        : "row",
+                                    },
+                                  ]}
+                                  accessibilityRole="link"
+                                  accessibilityLabel={`${t.openLink}: ${
+                                    source.title || url
+                                  }`}
+                                >
+                                  <Text style={styles.sourceIcon}>↗</Text>
+
+                                  <Text
+                                    style={[
+                                      styles.sourceText,
+                                      { textAlign: textAlignment },
+                                    ]}
+                                  >
+                                    {source.title || url}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        )}
+
+                      {!isUser &&
+                      item.searched === false &&
+                      item.searchNotice ? (
+                        <Text
+                          style={[
+                            styles.noticeText,
+                            { textAlign: textAlignment },
+                          ]}
+                        >
+                          {t.notVerified}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+
+              {(loading ||
