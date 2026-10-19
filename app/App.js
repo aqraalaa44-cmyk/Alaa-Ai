@@ -75,7 +75,8 @@ const TRANSLATIONS = {
     sources: "المصادر",
     thinking: "جاري التفكير...",
     welcomeTitle: "أهلًا! أنا Alaa AI",
-    welcomeBody: "اسألني عن أي شيء، أو أرفق صورة أو ملفًا لمساعدتك في فهمه.",
+    welcomeBody:
+      "اسألني عن أي شيء، أو أرفق صورة أو ملفًا لمساعدتك في فهمه.",
     describeImage: "صف هذه الصورة واشرح ما يظهر فيها.",
     history: "سجل المحادثات",
     emptyHistory: "ما في محادثات محفوظة لسه.",
@@ -112,7 +113,8 @@ const TRANSLATIONS = {
     sources: "Sources",
     thinking: "Thinking...",
     welcomeTitle: "Hi! I'm Alaa AI",
-    welcomeBody: "Ask me anything, or attach an image or document for help understanding it.",
+    welcomeBody:
+      "Ask me anything, or attach an image or document for help understanding it.",
     describeImage: "Describe this image and explain what is shown.",
     history: "Chat history",
     emptyHistory: "No saved conversations yet.",
@@ -126,9 +128,11 @@ const TRANSLATIONS = {
     fileTooLarge: "The file is larger than 4 MB.",
     unsupportedImage: "Unsupported image format. Use JPG, PNG, or WebP.",
     fileUnsupported: "Unsupported file. Use DOCX, PDF or TXT.",
-    fileUploadError: "Could not read the file. Check the server's /upload endpoint.",
+    fileUploadError:
+      "Could not read the file. Check the server's /upload endpoint.",
     imagePickFailed: "Could not select the image. Please try again.",
-    networkError: "Could not connect to the server. Check your internet connection.",
+    networkError:
+      "Could not connect to the server. Check your internet connection.",
     serverError: "Could not get a response. Please try again.",
     quotaError: "The AI usage limit has been reached.",
     noLanguages: "No languages found.",
@@ -140,8 +144,6 @@ const TRANSLATIONS = {
 };
 
 function getTranslation(language) {
-  // العربية والإنجليزية مترجمتان بالكامل في هذه النسخة.
-  // اللغات الأخرى تستخدم الإنجليزية للنصوص التي لم تُترجم بعد.
   return TRANSLATIONS[language] || TRANSLATIONS.en;
 }
 
@@ -152,17 +154,21 @@ function makeId() {
 function safeSourceUrl(rawUrl) {
   try {
     const url = new URL(rawUrl);
+
     if (url.protocol === "https:" || url.protocol === "http:") {
       return url.href;
     }
   } catch {
     // تجاهل الروابط غير الصالحة.
   }
+
   return null;
 }
 
 function getConversationTitle(messages, labels) {
-  const firstUserMessage = messages.find((message) => message.role === "user");
+  const firstUserMessage = messages.find(
+    (message) => message.role === "user"
+  );
 
   if (!firstUserMessage) {
     return labels.untitled;
@@ -180,9 +186,11 @@ function getMimeFromExtension(name) {
   const ext = String(name || "").split(".").pop().toLowerCase();
 
   if (ext === "pdf") return "application/pdf";
+
   if (ext === "docx") {
     return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   }
+
   if (ext === "txt") return "text/plain";
 
   return "application/octet-stream";
@@ -246,6 +254,7 @@ export default function App() {
   const scrollRef = useRef(null);
 
   const t = getTranslation(language);
+
   const labels = {
     ...TRANSLATIONS.en,
     ...t,
@@ -268,7 +277,6 @@ export default function App() {
     LANGUAGES.find((item) => item.code === language) || LANGUAGES[0];
 
   const isRTL = selectedLanguage.rtl;
-  const rowDirection = isRTL ? "row-reverse" : "row";
   const textAlignment = isRTL ? "right" : "left";
   const baseUrl = API_BASE_URL.replace(/\/+$/, "");
 
@@ -294,7 +302,10 @@ export default function App() {
 
         try {
           const parsed = JSON.parse(savedHistory || "[]");
-          if (Array.isArray(parsed)) parsedHistory = parsed;
+
+          if (Array.isArray(parsed)) {
+            parsedHistory = parsed;
+          }
         } catch {
           parsedHistory = [];
         }
@@ -329,7 +340,9 @@ export default function App() {
       } catch {
         // تظل المحادثة قابلة للاستخدام حتى لو تعذر تحميل السجل.
       } finally {
-        if (mounted) setHistoryReady(true);
+        if (mounted) {
+          setHistoryReady(true);
+        }
       }
     }
 
@@ -460,9 +473,7 @@ export default function App() {
           ? "image/webp"
           : "image/jpeg");
 
-      if (
-        !["image/jpeg", "image/png", "image/webp"].includes(mimeType)
-      ) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
         setAttachmentError(t.unsupportedImage);
         return;
       }
@@ -594,6 +605,7 @@ export default function App() {
 
   async function openSource(rawUrl) {
     const url = safeSourceUrl(rawUrl);
+
     if (!url) return;
 
     try {
@@ -689,7 +701,9 @@ export default function App() {
       let lastImageIndex = -1;
 
       history.forEach((item, index) => {
-        if (item.imageBase64) lastImageIndex = index;
+        if (item.imageBase64) {
+          lastImageIndex = index;
+        }
       });
 
       const apiMessages = history.map((item, index) => {
@@ -738,15 +752,11 @@ export default function App() {
           id: makeId(),
           role: "assistant",
           text:
-            typeof data.reply === "string"
-              ? data.reply
-              : t.serverError,
+            typeof data.reply === "string" ? data.reply : t.serverError,
           sources: Array.isArray(data.sources) ? data.sources : [],
           searched: Boolean(data.searched),
           searchNotice:
-            typeof data.searchNotice === "string"
-              ? data.searchNotice
-              : "",
+            typeof data.searchNotice === "string" ? data.searchNotice : "",
         },
       ]);
     } catch (err) {
@@ -781,10 +791,7 @@ export default function App() {
         )}
       </View>
 
-      <Pressable
-        style={styles.newChatButton}
-        onPress={startNewChat}
-      >
+      <Pressable style={styles.newChatButton} onPress={startNewChat}>
         <Text style={styles.newChatButtonText}>
           ＋ {t.newChat}
         </Text>
@@ -884,10 +891,13 @@ export default function App() {
               ]}
             >
               <View style={styles.brandLine}>
+                {/* شعار AI الجديد بدل النجمة */}
                 <View style={styles.logoBadge}>
-                  <Text style={styles.logoSpark}>✦</Text>
+                  <Text style={styles.logoBadgeText}>AI</Text>
                 </View>
-                <Text style={styles.logo}>Alaa AI</Text>
+
+                {/* اسم Alaa :) بجانب الشعار */}
+                <Text style={styles.logo}>Alaa :)</Text>
               </View>
 
               <View
@@ -958,6 +968,7 @@ export default function App() {
               {messages.length === 0 && (
                 <View style={styles.welcomeCard}>
                   <Text style={styles.welcomeSpark}>✦</Text>
+
                   <Text
                     style={[
                       styles.welcomeTitle,
@@ -966,6 +977,7 @@ export default function App() {
                   >
                     {t.welcomeTitle}
                   </Text>
+
                   <Text
                     style={[
                       styles.welcomeBody,
@@ -1010,6 +1022,7 @@ export default function App() {
                       {!!item.imageName && !item.imageUri && (
                         <View style={styles.messageFileCard}>
                           <Text style={styles.messageFileIcon}>🖼️</Text>
+
                           <View style={styles.messageFileTextArea}>
                             <Text
                               style={styles.messageFileName}
@@ -1017,6 +1030,7 @@ export default function App() {
                             >
                               {item.imageName}
                             </Text>
+
                             <Text style={styles.messageFileType}>
                               {t.attach}
                             </Text>
@@ -1027,6 +1041,7 @@ export default function App() {
                       {!!item.fileName && (
                         <View style={styles.messageFileCard}>
                           <Text style={styles.messageFileIcon}>📄</Text>
+
                           <View style={styles.messageFileTextArea}>
                             <Text
                               style={styles.messageFileName}
@@ -1034,6 +1049,7 @@ export default function App() {
                             >
                               {item.fileName}
                             </Text>
+
                             <Text style={styles.messageFileType}>
                               {item.fileMimeType || "Document"}
                             </Text>
@@ -1071,6 +1087,7 @@ export default function App() {
 
                             {item.sources.map((source, index) => {
                               const url = safeSourceUrl(source?.url);
+
                               if (!url) return null;
 
                               return (
@@ -1091,6 +1108,7 @@ export default function App() {
                                   }`}
                                 >
                                   <Text style={styles.sourceIcon}>↗</Text>
+
                                   <Text
                                     style={[
                                       styles.sourceText,
@@ -1142,6 +1160,7 @@ export default function App() {
                 >
                   {networkError}
                 </Text>
+
                 <Pressable onPress={() => setNetworkError("")}>
                   <Text style={styles.errorDismiss}>×</Text>
                 </Pressable>
@@ -1158,6 +1177,7 @@ export default function App() {
                 >
                   {attachmentError}
                 </Text>
+
                 <Pressable onPress={() => setAttachmentError("")}>
                   <Text style={styles.errorDismiss}>×</Text>
                 </Pressable>
@@ -1222,6 +1242,7 @@ export default function App() {
                   >
                     {pendingFile.name}
                   </Text>
+
                   <Text style={styles.pendingFileSubLabel}>
                     {labels.attachedFile}
                   </Text>
@@ -1310,6 +1331,7 @@ export default function App() {
               style={styles.drawerScrim}
               onPress={() => setHistoryModalVisible(false)}
             />
+
             {historyPanel}
           </View>
         </Modal>
@@ -1330,6 +1352,7 @@ export default function App() {
           <View style={styles.optionModal}>
             <View style={styles.modalTopRow}>
               <Text style={styles.modalTitle}>{labels.attachedFile}</Text>
+
               <Pressable
                 onPress={() => setAttachmentMenuVisible(false)}
                 style={styles.closeModalButton}
@@ -1380,6 +1403,7 @@ export default function App() {
           <View style={styles.languageModal}>
             <View style={styles.modalTopRow}>
               <Text style={styles.modalTitle}>{t.chooseLanguage}</Text>
+
               <Pressable
                 onPress={() => setLanguageModalVisible(false)}
                 style={styles.closeModalButton}
@@ -1418,6 +1442,7 @@ export default function App() {
                   ]}
                 >
                   <Text style={styles.languageName}>{item.name}</Text>
+
                   <Text style={styles.languageCode}>
                     {item.code === language
                       ? "✓"
@@ -1473,18 +1498,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+
+  // تصميم شعار AI الجديد
   logoBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#7662F0",
+    borderWidth: 1,
+    borderColor: "#A394FF",
+    shadowColor: "#7662F0",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  logoSpark: {
+  logoBadgeText: {
     color: "#FFFFFF",
-    fontSize: 23,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 1,
   },
   logo: {
     color: "#C4B2FF",
