@@ -13,488 +13,360 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL } from "./src/config";
+
+const LANGUAGE_STORAGE_KEY = "alaa_ai_language_v1";
+const CHATS_STORAGE_KEY = "alaa_ai_chat_history_v1";
+const ACTIVE_CHAT_STORAGE_KEY = "alaa_ai_active_chat_v1";
 
 const MAX_MESSAGE_LENGTH = 20000;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_BASE64_LENGTH = 5600000;
-const LANGUAGE_STORAGE_KEY = "alaa_ai_language_v1";
-
-// ترتيب النصوص بكل لغة:
-// status, newChat, chooseLanguage, searchLanguage, placeholder,
-// send, attach, remove, sources, thinking, welcomeTitle, welcomeBody,
-// describeImage, imageTooLarge, unsupportedImage, imagePickFailed,
-// networkError, serverError, noLanguages
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_EXTRACTED_TEXT = 12000;
+const MAX_STORED_CHATS = 30;
+const MAX_STORED_MESSAGES = 20;
 
 const LANGUAGES = [
-  {
-    code: "ar", name: "العربية", rtl: true,
-    v: [
-      "متصل الآن", "محادثة جديدة", "اختر اللغة", "ابحث عن لغة...",
-      "اكتب رسالتك...", "إرسال", "إرفاق صورة", "إزالة الصورة",
-      "المصادر", "جاري التفكير...", "أهلًا! أنا Alaa :)",
-      "اسألني عن أي شيء، أو أرفق صورة حتى أساعدك في فهمها.",
-      "صف هذه الصورة واشرح ما يظهر فيها.",
-      "حجم الصورة أكبر من 4 ميغابايت. اختر صورة أصغر.",
-      "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.",
-      "تعذّر اختيار الصورة. حاول مرة أخرى.",
-      "تعذّر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.",
-      "تعذّر الحصول على إجابة. حاول مرة أخرى.",
-      "لم يتم العثور على لغة."
-    ]
-  },
-  {
-    code: "en", name: "English", rtl: false,
-    v: [
-      "Online now", "New chat", "Choose language", "Search languages...",
-      "Type your message...", "Send", "Attach image", "Remove image",
-      "Sources", "Thinking...", "Hi! I'm Alaa :)",
-      "Ask me anything, or attach an image and I'll help you understand it.",
-      "Describe this image and explain what is shown.",
-      "Image is larger than 4 MB. Choose a smaller image.",
-      "Unsupported image format. Use JPG, PNG, or WebP.",
-      "Could not select the image. Try again.",
-      "Could not connect to the server. Check your internet connection.",
-      "Could not get a response. Please try again.",
-      "No languages found."
-    ]
-  },
-  {
-    code: "fr", name: "Français", rtl: false,
-    v: [
-      "En ligne", "Nouvelle conversation", "Choisir la langue",
-      "Rechercher des langues...", "Écrivez votre message...", "Envoyer",
-      "Joindre une image", "Supprimer l’image", "Sources",
-      "Réflexion en cours...", "Bonjour ! Je suis Alaa :)",
-      "Posez-moi une question ou joignez une image pour mieux la comprendre.",
-      "Décrivez cette image et expliquez ce qui est visible.",
-      "L’image dépasse 4 Mo. Choisissez une image plus petite.",
-      "Format non pris en charge. Utilisez JPG, PNG ou WebP.",
-      "Impossible de sélectionner l’image. Réessayez.",
-      "Connexion au serveur impossible. Vérifiez Internet.",
-      "Impossible d’obtenir une réponse. Réessayez.",
-      "Aucune langue trouvée."
-    ]
-  },
-  {
-    code: "es", name: "Español", rtl: false,
-    v: [
-      "En línea", "Nuevo chat", "Elegir idioma", "Buscar idiomas...",
-      "Escribe tu mensaje...", "Enviar", "Adjuntar imagen", "Quitar imagen",
-      "Fuentes", "Pensando...", "¡Hola! Soy Alaa :)",
-      "Pregúntame lo que quieras o adjunta una imagen para entenderla.",
-      "Describe esta imagen y explica lo que aparece.",
-      "La imagen supera los 4 MB. Elige una más pequeña.",
-      "Formato no compatible. Usa JPG, PNG o WebP.",
-      "No se pudo seleccionar la imagen. Inténtalo de nuevo.",
-      "No se pudo conectar al servidor. Comprueba Internet.",
-      "No se pudo obtener una respuesta. Inténtalo de nuevo.",
-      "No se encontraron idiomas."
-    ]
-  },
-  {
-    code: "de", name: "Deutsch", rtl: false,
-    v: [
-      "Jetzt online", "Neuer Chat", "Sprache wählen", "Sprachen suchen...",
-      "Nachricht eingeben...", "Senden", "Bild anhängen", "Bild entfernen",
-      "Quellen", "Denke nach...", "Hallo! Ich bin Alaa :)",
-      "Stelle eine Frage oder füge ein Bild hinzu, damit ich es erklären kann.",
-      "Beschreibe dieses Bild und erkläre, was zu sehen ist.",
-      "Das Bild ist größer als 4 MB. Wähle ein kleineres Bild.",
-      "Nicht unterstütztes Format. Verwende JPG, PNG oder WebP.",
-      "Bild konnte nicht ausgewählt werden. Bitte erneut versuchen.",
-      "Verbindung zum Server fehlgeschlagen. Prüfe das Internet.",
-      "Keine Antwort erhalten. Bitte erneut versuchen.",
-      "Keine Sprachen gefunden."
-    ]
-  },
-  {
-    code: "it", name: "Italiano", rtl: false,
-    v: [
-      "Online ora", "Nuova chat", "Scegli la lingua", "Cerca lingue...",
-      "Scrivi il tuo messaggio...", "Invia", "Allega immagine",
-      "Rimuovi immagine", "Fonti", "Sto pensando...", "Ciao! Sono Alaa :)",
-      "Fammi una domanda o allega un'immagine per comprenderla meglio.",
-      "Descrivi questa immagine e spiega cosa mostra.",
-      "L'immagine supera 4 MB. Scegline una più piccola.",
-      "Formato non supportato. Usa JPG, PNG o WebP.",
-      "Impossibile selezionare l'immagine. Riprova.",
-      "Impossibile connettersi al server. Controlla Internet.",
-      "Impossibile ottenere una risposta. Riprova.",
-      "Nessuna lingua trovata."
-    ]
-  },
-  {
-    code: "pt", name: "Português", rtl: false,
-    v: [
-      "Online agora", "Nova conversa", "Escolher idioma",
-      "Pesquisar idiomas...", "Escreva sua mensagem...", "Enviar",
-      "Anexar imagem", "Remover imagem", "Fontes", "Pensando...",
-      "Olá! Sou Alaa :)", "Faça uma pergunta ou anexe uma imagem para entendê-la.",
-      "Descreva esta imagem e explique o que aparece.",
-      "A imagem excede 4 MB. Escolha uma imagem menor.",
-      "Formato não suportado. Use JPG, PNG ou WebP.",
-      "Não foi possível selecionar a imagem. Tente novamente.",
-      "Não foi possível conectar ao servidor. Verifique a internet.",
-      "Não foi possível obter uma resposta. Tente novamente.",
-      "Nenhum idioma encontrado."
-    ]
-  },
-  {
-    code: "tr", name: "Türkçe", rtl: false,
-    v: [
-      "Şu anda çevrimiçi", "Yeni sohbet", "Dil seç", "Dil ara...",
-      "Mesajını yaz...", "Gönder", "Görsel ekle", "Görseli kaldır",
-      "Kaynaklar", "Düşünüyor...", "Merhaba! Ben Alaa :)",
-      "Bana bir soru sor veya anlamana yardımcı olmam için bir görsel ekle.",
-      "Bu görseli açıkla ve neler gösterdiğini anlat.",
-      "Görsel 4 MB'dan büyük. Daha küçük bir görsel seç.",
-      "Desteklenmeyen biçim. JPG, PNG veya WebP kullan.",
-      "Görsel seçilemedi. Lütfen tekrar dene.",
-      "Sunucuya bağlanılamadı. İnternet bağlantını kontrol et.",
-      "Yanıt alınamadı. Lütfen tekrar dene.",
-      "Dil bulunamadı."
-    ]
-  },
-  {
-    code: "ru", name: "Русский", rtl: false,
-    v: [
-      "В сети", "Новый чат", "Выбрать язык", "Поиск языков...",
-      "Введите сообщение...", "Отправить", "Прикрепить изображение",
-      "Удалить изображение", "Источники", "Думаю...", "Привет! Я Alaa :)",
-      "Задайте вопрос или прикрепите изображение, чтобы я помог его понять.",
-      "Опишите изображение и расскажите, что на нём показано.",
-      "Изображение больше 4 МБ. Выберите изображение меньшего размера.",
-      "Формат не поддерживается. Используйте JPG, PNG или WebP.",
-      "Не удалось выбрать изображение. Попробуйте снова.",
-      "Не удалось подключиться к серверу. Проверьте интернет.",
-      "Не удалось получить ответ. Попробуйте снова.",
-      "Языки не найдены."
-    ]
-  },
-  {
-    code: "zh-CN", name: "简体中文", rtl: false,
-    v: [
-      "在线", "新对话", "选择语言", "搜索语言...",
-      "输入消息...", "发送", "附加图片", "移除图片",
-      "来源", "正在思考...", "你好！我是 Alaa :)",
-      "你可以提问，也可以附加图片让我帮你理解。",
-      "描述这张图片并解释其中的内容。",
-      "图片超过 4 MB，请选择较小的图片。",
-      "不支持此格式。请使用 JPG、PNG 或 WebP。",
-      "无法选择图片，请重试。",
-      "无法连接服务器，请检查网络。",
-      "无法获取回复，请重试。",
-      "未找到语言。"
-    ]
-  },
-  {
-    code: "zh-TW", name: "繁體中文", rtl: false,
-    v: [
-      "目前在線", "新對話", "選擇語言", "搜尋語言...",
-      "輸入訊息...", "傳送", "附加圖片", "移除圖片",
-      "來源", "思考中...", "你好！我是 Alaa :)",
-      "你可以提問，也可以附加圖片讓我幫你理解。",
-      "描述這張圖片並解釋其中的內容。",
-      "圖片超過 4 MB，請選擇較小的圖片。",
-      "不支援此格式。請使用 JPG、PNG 或 WebP。",
-      "無法選擇圖片，請再試一次。",
-      "無法連線至伺服器，請檢查網路。",
-      "無法取得回覆，請再試一次。",
-      "找不到語言。"
-    ]
-  },
-  {
-    code: "ja", name: "日本語", rtl: false,
-    v: [
-      "オンライン", "新しいチャット", "言語を選択", "言語を検索...",
-      "メッセージを入力...", "送信", "画像を添付", "画像を削除",
-      "ソース", "考え中...", "こんにちは！Alaa :) です",
-      "質問したり、画像を添付して内容の説明を求めたりできます。",
-      "この画像を説明し、何が写っているか教えてください。",
-      "画像が4MBを超えています。小さい画像を選んでください。",
-      "未対応形式です。JPG、PNG、WebPを使用してください。",
-      "画像を選択できませんでした。もう一度お試しください。",
-      "サーバーに接続できません。ネットワークを確認してください。",
-      "回答を取得できませんでした。もう一度お試しください。",
-      "言語が見つかりません。"
-    ]
-  },
-  {
-    code: "ko", name: "한국어", rtl: false,
-    v: [
-      "온라인", "새 채팅", "언어 선택", "언어 검색...",
-      "메시지를 입력하세요...", "보내기", "이미지 첨부",
-      "이미지 삭제", "출처", "생각 중...", "안녕하세요! Alaa입니다 :)",
-      "질문을 하거나 이미지를 첨부하여 내용을 알아볼 수 있습니다.",
-      "이 이미지를 설명하고 무엇이 보이는지 알려주세요.",
-      "이미지가 4MB보다 큽니다. 더 작은 이미지를 선택하세요.",
-      "지원되지 않는 형식입니다. JPG, PNG 또는 WebP를 사용하세요.",
-      "이미지를 선택하지 못했습니다. 다시 시도하세요.",
-      "서버에 연결할 수 없습니다. 인터넷을 확인하세요.",
-      "답변을 가져오지 못했습니다. 다시 시도하세요.",
-      "언어를 찾을 수 없습니다."
-    ]
-  },
-  {
-    code: "hi", name: "हिन्दी", rtl: false,
-    v: [
-      "अभी ऑनलाइन", "नई चैट", "भाषा चुनें", "भाषाएँ खोजें...",
-      "अपना संदेश लिखें...", "भेजें", "चित्र जोड़ें", "चित्र हटाएँ",
-      "स्रोत", "सोच रहा हूँ...", "नमस्ते! मैं Alaa हूँ :)",
-      "कोई प्रश्न पूछें या समझने में मदद के लिए चित्र जोड़ें।",
-      "इस चित्र का वर्णन करें और बताएं कि इसमें क्या दिख रहा है।",
-      "चित्र 4 MB से बड़ा है। छोटा चित्र चुनें।",
-      "यह प्रारूप समर्थित नहीं है। JPG, PNG या WebP इस्तेमाल करें।",
-      "चित्र नहीं चुना जा सका। फिर से प्रयास करें।",
-      "सर्वर से कनेक्ट नहीं हो सका। इंटरनेट जाँचें।",
-      "उत्तर नहीं मिल सका। फिर से प्रयास करें।",
-      "कोई भाषा नहीं मिली।"
-    ]
-  },
-  {
-    code: "ur", name: "اردو", rtl: true,
-    v: [
-      "ابھی آن لائن", "نئی گفتگو", "زبان منتخب کریں", "زبان تلاش کریں...",
-      "اپنا پیغام لکھیں...", "بھیجیں", "تصویر منسلک کریں",
-      "تصویر ہٹائیں", "ذرائع", "سوچ رہا ہوں...", "سلام! میں Alaa ہوں :)",
-      "سوال پوچھیں یا تصویر منسلک کریں تاکہ میں اسے سمجھنے میں مدد دوں۔",
-      "اس تصویر کی وضاحت کریں اور بتائیں کہ اس میں کیا دکھائی دیتا ہے۔",
-      "تصویر 4 MB سے بڑی ہے۔ چھوٹی تصویر منتخب کریں۔",
-      "یہ فارمیٹ سپورٹ نہیں ہے۔ JPG، PNG یا WebP استعمال کریں۔",
-      "تصویر منتخب نہیں ہو سکی۔ دوبارہ کوشش کریں۔",
-      "سرور سے رابطہ نہیں ہو سکا۔ انٹرنیٹ چیک کریں۔",
-      "جواب حاصل نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
-      "کوئی زبان نہیں ملی۔"
-    ]
-  },
-  {
-    code: "bn", name: "বাংলা", rtl: false,
-    v: [
-      "এখন অনলাইন", "নতুন চ্যাট", "ভাষা নির্বাচন করুন", "ভাষা খুঁজুন...",
-      "আপনার বার্তা লিখুন...", "পাঠান", "ছবি সংযুক্ত করুন",
-      "ছবি সরান", "সূত্র", "ভাবছি...", "হ্যালো! আমি Alaa :)",
-      "প্রশ্ন করুন বা বুঝতে সাহায্যের জন্য একটি ছবি সংযুক্ত করুন।",
-      "ছবিটি বর্ণনা করুন এবং এতে কী দেখা যাচ্ছে তা ব্যাখ্যা করুন।",
-      "ছবিটি 4 MB-এর বেশি। ছোট ছবি বেছে নিন।",
-      "এই ফরম্যাট সমর্থিত নয়। JPG, PNG বা WebP ব্যবহার করুন।",
-      "ছবি নির্বাচন করা যায়নি। আবার চেষ্টা করুন।",
-      "সার্ভারে সংযোগ করা যায়নি। ইন্টারনেট পরীক্ষা করুন।",
-      "উত্তর পাওয়া যায়নি। আবার চেষ্টা করুন।",
-      "কোনো ভাষা পাওয়া যায়নি।"
-    ]
-  },
-  {
-    code: "id", name: "Bahasa Indonesia", rtl: false,
-    v: [
-      "Sedang online", "Obrolan baru", "Pilih bahasa", "Cari bahasa...",
-      "Ketik pesan Anda...", "Kirim", "Lampirkan gambar",
-      "Hapus gambar", "Sumber", "Sedang berpikir...", "Hai! Saya Alaa :)",
-      "Ajukan pertanyaan atau lampirkan gambar agar saya membantu memahaminya.",
-      "Jelaskan gambar ini dan terangkan apa yang terlihat.",
-      "Gambar lebih besar dari 4 MB. Pilih gambar yang lebih kecil.",
-      "Format tidak didukung. Gunakan JPG, PNG, atau WebP.",
-      "Gambar tidak dapat dipilih. Coba lagi.",
-      "Tidak dapat terhubung ke server. Periksa internet.",
-      "Jawaban tidak dapat diperoleh. Coba lagi.",
-      "Bahasa tidak ditemukan."
-    ]
-  },
-  {
-    code: "ms", name: "Bahasa Melayu", rtl: false,
-    v: [
-      "Dalam talian sekarang", "Sembang baharu", "Pilih bahasa",
-      "Cari bahasa...", "Taip mesej anda...", "Hantar",
-      "Lampirkan imej", "Buang imej", "Sumber", "Sedang berfikir...",
-      "Hai! Saya Alaa :)", "Tanya soalan atau lampirkan imej supaya saya dapat membantu memahaminya.",
-      "Huraikan imej ini dan jelaskan perkara yang kelihatan.",
-      "Imej melebihi 4 MB. Pilih imej yang lebih kecil.",
-      "Format tidak disokong. Gunakan JPG, PNG atau WebP.",
-      "Imej tidak dapat dipilih. Cuba lagi.",
-      "Tidak dapat menyambung ke pelayan. Semak internet.",
-      "Jawapan tidak dapat diperoleh. Cuba lagi.",
-      "Tiada bahasa ditemui."
-    ]
-  },
-  {
-    code: "th", name: "ไทย", rtl: false,
-    v: [
-      "ออนไลน์อยู่", "แชตใหม่", "เลือกภาษา", "ค้นหาภาษา...",
-      "พิมพ์ข้อความ...", "ส่ง", "แนบรูปภาพ", "ลบรูปภาพ",
-      "แหล่งที่มา", "กำลังคิด...", "สวัสดี! ฉันคือ Alaa :)",
-      "ถามคำถามหรือแนบรูปภาพเพื่อให้ช่วยอธิบายได้",
-      "อธิบายภาพนี้และบอกว่ามีอะไรอยู่ในภาพ",
-      "รูปภาพมีขนาดเกิน 4 MB โปรดเลือกรูปที่เล็กกว่า",
-      "ไม่รองรับรูปแบบนี้ โปรดใช้ JPG, PNG หรือ WebP",
-      "เลือกรูปภาพไม่ได้ โปรดลองอีกครั้ง",
-      "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ โปรดตรวจสอบอินเทอร์เน็ต",
-      "รับคำตอบไม่ได้ โปรดลองอีกครั้ง",
-      "ไม่พบภาษา"
-    ]
-  },
-  {
-    code: "vi", name: "Tiếng Việt", rtl: false,
-    v: [
-      "Đang trực tuyến", "Trò chuyện mới", "Chọn ngôn ngữ",
-      "Tìm ngôn ngữ...", "Nhập tin nhắn...", "Gửi", "Đính kèm ảnh",
-      "Xóa ảnh", "Nguồn", "Đang suy nghĩ...", "Xin chào! Tôi là Alaa :)",
-      "Hãy đặt câu hỏi hoặc đính kèm ảnh để tôi giúp bạn hiểu ảnh.",
-      "Mô tả hình ảnh này và giải thích những gì xuất hiện trong ảnh.",
-      "Ảnh lớn hơn 4 MB. Hãy chọn ảnh nhỏ hơn.",
-      "Định dạng không được hỗ trợ. Dùng JPG, PNG hoặc WebP.",
-      "Không thể chọn ảnh. Vui lòng thử lại.",
-      "Không thể kết nối máy chủ. Hãy kiểm tra Internet.",
-      "Không thể nhận câu trả lời. Vui lòng thử lại.",
-      "Không tìm thấy ngôn ngữ."
-    ]
-  },
-  {
-    code: "fa", name: "فارسی", rtl: true,
-    v: [
-      "اکنون آنلاین", "گفتگوی جدید", "انتخاب زبان", "جستجوی زبان...",
-      "پیام خود را بنویسید...", "ارسال", "پیوست تصویر", "حذف تصویر",
-      "منابع", "در حال فکر کردن...", "سلام! من Alaa هستم :)",
-      "سؤال بپرسید یا تصویری پیوست کنید تا در درک آن کمک کنم.",
-      "این تصویر را توصیف کنید و بگویید چه چیزی در آن دیده می‌شود.",
-      "تصویر بیش از ۴ مگابایت است. تصویر کوچک‌تری انتخاب کنید.",
-      "این قالب پشتیبانی نمی‌شود. از JPG، PNG یا WebP استفاده کنید.",
-      "انتخاب تصویر ممکن نشد. دوباره تلاش کنید.",
-      "اتصال به سرور ممکن نیست. اینترنت را بررسی کنید.",
-      "دریافت پاسخ ممکن نشد. دوباره تلاش کنید.",
-      "زبانی پیدا نشد."
-    ]
-  },
-  {
-    code: "he", name: "עברית", rtl: true,
-    v: [
-      "מחובר עכשיו", "צ'אט חדש", "בחירת שפה", "חיפוש שפות...",
-      "כתבו הודעה...", "שליחה", "צירוף תמונה", "הסרת תמונה",
-      "מקורות", "חושב...", "שלום! אני Alaa :)",
-      "אפשר לשאול שאלה או לצרף תמונה כדי שאעזור להבין אותה.",
-      "תאר את התמונה והסבר מה מופיע בה.",
-      "התמונה גדולה מ־4 MB. בחר תמונה קטנה יותר.",
-      "הפורמט אינו נתמך. יש להשתמש ב־JPG, PNG או WebP.",
-      "לא ניתן לבחור את התמונה. נסו שוב.",
-      "לא ניתן להתחבר לשרת. בדקו את האינטרנט.",
-      "לא ניתן לקבל תשובה. נסו שוב.",
-      "לא נמצאו שפות."
-    ]
-  },
-  {
-    code: "nl", name: "Nederlands", rtl: false,
-    v: [
-      "Nu online", "Nieuwe chat", "Taal kiezen", "Talen zoeken...",
-      "Typ je bericht...", "Verzenden", "Afbeelding toevoegen",
-      "Afbeelding verwijderen", "Bronnen", "Aan het nadenken...",
-      "Hoi! Ik ben Alaa :)", "Stel een vraag of voeg een afbeelding toe zodat ik kan helpen.",
-      "Beschrijf deze afbeelding en leg uit wat erop te zien is.",
-      "De afbeelding is groter dan 4 MB. Kies een kleinere afbeelding.",
-      "Niet-ondersteund formaat. Gebruik JPG, PNG of WebP.",
-      "De afbeelding kon niet worden gekozen. Probeer het opnieuw.",
-      "Kan geen verbinding maken met de server. Controleer internet.",
-      "Er kon geen antwoord worden opgehaald. Probeer opnieuw.",
-      "Geen talen gevonden."
-    ]
-  },
-  {
-    code: "pl", name: "Polski", rtl: false,
-    v: [
-      "Teraz online", "Nowy czat", "Wybierz język", "Szukaj języków...",
-      "Wpisz wiadomość...", "Wyślij", "Dołącz obraz", "Usuń obraz",
-      "Źródła", "Myślę...", "Cześć! Jestem Alaa :)",
-      "Zadaj pytanie lub dołącz obraz, abym pomógł Ci go zrozumieć.",
-      "Opisz ten obraz i wyjaśnij, co przedstawia.",
-      "Obraz przekracza 4 MB. Wybierz mniejszy obraz.",
-      "Nieobsługiwany format. Użyj JPG, PNG lub WebP.",
-      "Nie można wybrać obrazu. Spróbuj ponownie.",
-      "Nie można połączyć się z serwerem. Sprawdź internet.",
-      "Nie udało się uzyskać odpowiedzi. Spróbuj ponownie.",
-      "Nie znaleziono języków."
-    ]
-  },
-  {
-    code: "el", name: "Ελληνικά", rtl: false,
-    v: [
-      "Σε σύνδεση", "Νέα συνομιλία", "Επιλογή γλώσσας",
-      "Αναζήτηση γλωσσών...", "Πληκτρολογήστε μήνυμα...", "Αποστολή",
-      "Επισύναψη εικόνας", "Αφαίρεση εικόνας", "Πηγές",
-      "Σκέφτομαι...", "Γεια! Είμαι το Alaa :)",
-      "Κάντε μια ερώτηση ή επισυνάψτε μια εικόνα για να σας βοηθήσω.",
-      "Περιγράψτε αυτήν την εικόνα και εξηγήστε τι φαίνεται.",
-      "Η εικόνα είναι μεγαλύτερη από 4 MB. Επιλέξτε μικρότερη.",
-      "Μη υποστηριζόμενη μορφή. Χρησιμοποιήστε JPG, PNG ή WebP.",
-      "Δεν ήταν δυνατή η επιλογή εικόνας. Δοκιμάστε ξανά.",
-      "Δεν είναι δυνατή η σύνδεση με τον διακομιστή. Ελέγξτε το διαδίκτυο.",
-      "Δεν ήταν δυνατή η λήψη απάντησης. Δοκιμάστε ξανά.",
-      "Δεν βρέθηκαν γλώσσες."
-    ]
-  },
-  {
-    code: "ro", name: "Română", rtl: false,
-    v: [
-      "Online acum", "Chat nou", "Alege limba", "Caută limbi...",
-      "Scrie mesajul...", "Trimite", "Atașează imagine",
-      "Elimină imaginea", "Surse", "Mă gândesc...",
-      "Salut! Sunt Alaa :)", "Pune o întrebare sau atașează o imagine ca să te ajut să o înțelegi.",
-      "Descrie această imagine și explică ce se vede.",
-      "Imaginea depășește 4 MB. Alege o imagine mai mică.",
-      "Format neacceptat. Folosește JPG, PNG sau WebP.",
-      "Imaginea nu a putut fi selectată. Încearcă din nou.",
-      "Conectarea la server a eșuat. Verifică internetul.",
-      "Nu s-a putut obține un răspuns. Încearcă din nou.",
-      "Nu s-au găsit limbi."
-    ]
-  },
+  { code: "ar", name: "العربية", rtl: true },
+  { code: "en", name: "English", rtl: false },
+  { code: "fr", name: "Français", rtl: false },
+  { code: "es", name: "Español", rtl: false },
+  { code: "de", name: "Deutsch", rtl: false },
+  { code: "it", name: "Italiano", rtl: false },
+  { code: "pt", name: "Português", rtl: false },
+  { code: "tr", name: "Türkçe", rtl: false },
+  { code: "ru", name: "Русский", rtl: false },
+  { code: "zh-CN", name: "简体中文", rtl: false },
+  { code: "zh-TW", name: "繁體中文", rtl: false },
+  { code: "ja", name: "日本語", rtl: false },
+  { code: "ko", name: "한국어", rtl: false },
+  { code: "hi", name: "हिन्दी", rtl: false },
+  { code: "ur", name: "اردو", rtl: true },
+  { code: "bn", name: "বাংলা", rtl: false },
+  { code: "id", name: "Bahasa Indonesia", rtl: false },
+  { code: "ms", name: "Bahasa Melayu", rtl: false },
+  { code: "th", name: "ไทย", rtl: false },
+  { code: "vi", name: "Tiếng Việt", rtl: false },
+  { code: "fa", name: "فارسی", rtl: true },
+  { code: "he", name: "עברית", rtl: true },
+  { code: "nl", name: "Nederlands", rtl: false },
+  { code: "pl", name: "Polski", rtl: false },
+  { code: "el", name: "Ελληνικά", rtl: false },
+  { code: "ro", name: "Română", rtl: false },
 ];
 
-function getTranslation(code) {
-  const language = LANGUAGES.find((item) => item.code === code);
-  return language?.v || LANGUAGES[1].v;
+const TRANSLATIONS = {
+  ar: {
+    status: "متصل الآن",
+    newChat: "محادثة جديدة",
+    chooseLanguage: "اختر اللغة",
+    searchLanguage: "ابحث عن لغة...",
+    placeholder: "اكتب رسالتك...",
+    send: "إرسال",
+    attach: "إرفاق",
+    remove: "إزالة",
+    sources: "المصادر",
+    thinking: "جاري التفكير...",
+    welcomeTitle: "أهلًا! أنا Alaa AI",
+    welcomeBody: "اسألني عن أي شيء، أو أرفق صورة أو ملفًا لمساعدتك في فهمه.",
+    describeImage: "صف هذه الصورة واشرح ما يظهر فيها.",
+    history: "سجل المحادثات",
+    emptyHistory: "ما في محادثات محفوظة لسه.",
+    deleteChat: "حذف المحادثة",
+    openHistory: "عرض سجل المحادثات",
+    choosePhoto: "اختيار صورة",
+    chooseFile: "إرفاق ملف Word أو PDF أو TXT",
+    attachedFile: "ملف مرفق",
+    uploading: "جاري تجهيز الملف...",
+    imageTooLarge: "حجم الصورة أكبر من 4 ميغابايت.",
+    fileTooLarge: "حجم الملف أكبر من 4 ميغابايت.",
+    unsupportedImage: "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.",
+    fileUnsupported: "الملف غير مدعوم. استخدم DOCX أو PDF أو TXT.",
+    fileUploadError: "تعذّر قراءة الملف. تأكد أن الخادم يدعم /upload.",
+    imagePickFailed: "تعذّر اختيار الصورة. حاول مرة أخرى.",
+    networkError: "تعذّر الاتصال بالخادم. تحقق من الإنترنت.",
+    serverError: "تعذّر الحصول على إجابة. حاول مرة أخرى.",
+    quotaError: "وصلت إلى حد الاستخدام المتاح للذكاء الاصطناعي.",
+    noLanguages: "لم يتم العثور على لغة.",
+    notVerified: "لم يتم التحقق من هذه الإجابة عبر البحث المباشر.",
+    openLink: "فتح المصدر",
+    historySaved: "محفوظ محليًا على هذا الجهاز",
+    untitled: "محادثة جديدة",
+  },
+  en: {
+    status: "Online now",
+    newChat: "New chat",
+    chooseLanguage: "Choose language",
+    searchLanguage: "Search languages...",
+    placeholder: "Type your message...",
+    send: "Send",
+    attach: "Attach",
+    remove: "Remove",
+    sources: "Sources",
+    thinking: "Thinking...",
+    welcomeTitle: "Hi! I'm Alaa AI",
+    welcomeBody: "Ask me anything, or attach an image or document for help understanding it.",
+    describeImage: "Describe this image and explain what is shown.",
+    history: "Chat history",
+    emptyHistory: "No saved conversations yet.",
+    deleteChat: "Delete conversation",
+    openHistory: "Show chat history",
+    choosePhoto: "Choose a photo",
+    chooseFile: "Attach Word, PDF or TXT file",
+    attachedFile: "Attached file",
+    uploading: "Preparing file...",
+    imageTooLarge: "The image is larger than 4 MB.",
+    fileTooLarge: "The file is larger than 4 MB.",
+    unsupportedImage: "Unsupported image format. Use JPG, PNG, or WebP.",
+    fileUnsupported: "Unsupported file. Use DOCX, PDF or TXT.",
+    fileUploadError: "Could not read the file. Check the server's /upload endpoint.",
+    imagePickFailed: "Could not select the image. Please try again.",
+    networkError: "Could not connect to the server. Check your internet connection.",
+    serverError: "Could not get a response. Please try again.",
+    quotaError: "The AI usage limit has been reached.",
+    noLanguages: "No languages found.",
+    notVerified: "This answer was not verified with live web search.",
+    openLink: "Open source",
+    historySaved: "Saved locally on this device",
+    untitled: "New conversation",
+  },
+};
+
+function getTranslation(language) {
+  // العربية والإنجليزية مترجمتان بالكامل في هذه النسخة.
+  // اللغات الأخرى تستخدم الإنجليزية للنصوص التي لم تُترجم بعد.
+  return TRANSLATIONS[language] || TRANSLATIONS.en;
 }
 
-function safeSourceUrl(value) {
+function makeId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function safeSourceUrl(rawUrl) {
   try {
-    const url = new URL(value);
+    const url = new URL(rawUrl);
     if (url.protocol === "https:" || url.protocol === "http:") {
       return url.href;
     }
-  } catch {}
+  } catch {
+    // تجاهل الروابط غير الصالحة.
+  }
   return null;
 }
 
+function getConversationTitle(messages, labels) {
+  const firstUserMessage = messages.find((message) => message.role === "user");
+
+  if (!firstUserMessage) {
+    return labels.untitled;
+  }
+
+  const title =
+    firstUserMessage.fileName ||
+    firstUserMessage.text ||
+    labels.untitled;
+
+  return String(title).replace(/\s+/g, " ").trim().slice(0, 42);
+}
+
+function getMimeFromExtension(name) {
+  const ext = String(name || "").split(".").pop().toLowerCase();
+
+  if (ext === "pdf") return "application/pdf";
+  if (ext === "docx") {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  if (ext === "txt") return "text/plain";
+
+  return "application/octet-stream";
+}
+
+function cleanMessagesForStorage(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .slice(-MAX_STORED_MESSAGES)
+    .map((message) => {
+      const copy = { ...message };
+
+      // لا نخزن بيانات الصورة الكبيرة داخل سجل المحادثات.
+      delete copy.imageBase64;
+
+      // روابط صور الويب المؤقتة لن تبقى صالحة بعد تحديث الصفحة.
+      if (
+        typeof copy.imageUri === "string" &&
+        copy.imageUri.startsWith("blob:")
+      ) {
+        copy.imageUri = null;
+      }
+
+      if (typeof copy.documentContext === "string") {
+        copy.documentContext = copy.documentContext.slice(
+          0,
+          MAX_EXTRACTED_TEXT
+        );
+      }
+
+      return copy;
+    });
+}
+
 export default function App() {
-  const [languageCode, setLanguageCode] = useState("ar");
-  const [languageModal, setLanguageModal] = useState(false);
+  const { width } = useWindowDimensions();
+  const showDesktopHistory = width >= 900;
+
+  const [language, setLanguage] = useState("ar");
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [languageQuery, setLanguageQuery] = useState("");
 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+
   const [pendingImage, setPendingImage] = useState(null);
+  const [pendingFile, setPendingFile] = useState(null);
+
+  const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+
+  const [conversations, setConversations] = useState([]);
+  const [activeConversationId, setActiveConversationId] = useState(null);
+  const [historyReady, setHistoryReady] = useState(false);
+
+  const [attachmentError, setAttachmentError] = useState("");
+  const [networkError, setNetworkError] = useState("");
+
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+
   const scrollRef = useRef(null);
 
-  const language =
-    LANGUAGES.find((item) => item.code === languageCode) || LANGUAGES[0];
+  const t = getTranslation(language);
+  const labels = {
+    ...TRANSLATIONS.en,
+    ...t,
+    history: t.history || TRANSLATIONS.en.history,
+    emptyHistory: t.emptyHistory || TRANSLATIONS.en.emptyHistory,
+    deleteChat: t.deleteChat || TRANSLATIONS.en.deleteChat,
+    openHistory: t.openHistory || TRANSLATIONS.en.openHistory,
+    choosePhoto: t.choosePhoto || TRANSLATIONS.en.choosePhoto,
+    chooseFile: t.chooseFile || TRANSLATIONS.en.chooseFile,
+    attachedFile: t.attachedFile || TRANSLATIONS.en.attachedFile,
+    uploading: t.uploading || TRANSLATIONS.en.uploading,
+    fileTooLarge: t.fileTooLarge || TRANSLATIONS.en.fileTooLarge,
+    fileUnsupported: t.fileUnsupported || TRANSLATIONS.en.fileUnsupported,
+    fileUploadError: t.fileUploadError || TRANSLATIONS.en.fileUploadError,
+    historySaved: t.historySaved || TRANSLATIONS.en.historySaved,
+    untitled: t.untitled || TRANSLATIONS.en.untitled,
+  };
 
-  const t = getTranslation(languageCode);
-  const isRTL = language.rtl;
-  const direction = isRTL ? "row-reverse" : "row";
-  const alignment = isRTL ? "right" : "left";
+  const selectedLanguage =
+    LANGUAGES.find((item) => item.code === language) || LANGUAGES[0];
+
+  const isRTL = selectedLanguage.rtl;
+  const rowDirection = isRTL ? "row-reverse" : "row";
+  const textAlignment = isRTL ? "right" : "left";
+  const baseUrl = API_BASE_URL.replace(/\/+$/, "");
 
   useEffect(() => {
-    AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)
-      .then((stored) => {
-        if (LANGUAGES.some((item) => item.code === stored)) {
-          setLanguageCode(stored);
+    let mounted = true;
+
+    async function loadSavedData() {
+      try {
+        const [savedLanguage, savedHistory, savedActiveId] =
+          await Promise.all([
+            AsyncStorage.getItem(LANGUAGE_STORAGE_KEY),
+            AsyncStorage.getItem(CHATS_STORAGE_KEY),
+            AsyncStorage.getItem(ACTIVE_CHAT_STORAGE_KEY),
+          ]);
+
+        if (!mounted) return;
+
+        if (LANGUAGES.some((item) => item.code === savedLanguage)) {
+          setLanguage(savedLanguage);
         }
-      })
-      .catch(() => {});
+
+        let parsedHistory = [];
+
+        try {
+          const parsed = JSON.parse(savedHistory || "[]");
+          if (Array.isArray(parsed)) parsedHistory = parsed;
+        } catch {
+          parsedHistory = [];
+        }
+
+        parsedHistory = parsedHistory
+          .filter(
+            (item) =>
+              item &&
+              typeof item.id === "string" &&
+              Array.isArray(item.messages)
+          )
+          .map((item) => ({
+            id: item.id,
+            title: item.title || labels.untitled,
+            createdAt: Number(item.createdAt) || Date.now(),
+            updatedAt: Number(item.updatedAt) || Date.now(),
+            messages: cleanMessagesForStorage(item.messages),
+          }))
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+          .slice(0, MAX_STORED_CHATS);
+
+        setConversations(parsedHistory);
+
+        const active = parsedHistory.find(
+          (item) => item.id === savedActiveId
+        );
+
+        if (active) {
+          setActiveConversationId(active.id);
+          setMessages(active.messages);
+        }
+      } catch {
+        // تظل المحادثة قابلة للاستخدام حتى لو تعذر تحميل السجل.
+      } finally {
+        if (mounted) setHistoryReady(true);
+      }
+    }
+
+    loadSavedData();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!historyReady) return;
+
+    AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, language).catch(() => {});
+  }, [language, historyReady]);
+
+  useEffect(() => {
+    if (!historyReady) return;
+
+    AsyncStorage.setItem(
+      CHATS_STORAGE_KEY,
+      JSON.stringify(conversations.slice(0, MAX_STORED_CHATS))
+    ).catch(() => {});
+  }, [conversations, historyReady]);
+
+  useEffect(() => {
+    if (!historyReady) return;
+
+    if (activeConversationId) {
+      AsyncStorage.setItem(
+        ACTIVE_CHAT_STORAGE_KEY,
+        activeConversationId
+      ).catch(() => {});
+    } else {
+      AsyncStorage.removeItem(ACTIVE_CHAT_STORAGE_KEY).catch(() => {});
+    }
+  }, [activeConversationId, historyReady]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -503,6 +375,36 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (!historyReady || !activeConversationId || messages.length === 0) {
+      return;
+    }
+
+    const savedMessages = cleanMessagesForStorage(messages);
+    const now = Date.now();
+
+    setConversations((previous) => {
+      const existing = previous.find(
+        (item) => item.id === activeConversationId
+      );
+
+      const updatedConversation = {
+        id: activeConversationId,
+        title: getConversationTitle(savedMessages, labels),
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+        messages: savedMessages,
+      };
+
+      return [
+        updatedConversation,
+        ...previous.filter((item) => item.id !== activeConversationId),
+      ]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, MAX_STORED_CHATS);
+    });
+  }, [messages, activeConversationId, historyReady, language]);
 
   const filteredLanguages = useMemo(() => {
     const query = languageQuery.trim().toLocaleLowerCase();
@@ -514,21 +416,24 @@ export default function App() {
     );
   }, [languageQuery]);
 
-  async function changeLanguage(code) {
-    setLanguageCode(code);
-    setLanguageModal(false);
+  async function chooseLanguage(code) {
+    setLanguage(code);
+    setLanguageModalVisible(false);
     setLanguageQuery("");
-    setError("");
+    setAttachmentError("");
+    setNetworkError("");
 
     try {
       await AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, code);
     } catch {
-      // The selected language remains active for this session.
+      // يستمر اختيار اللغة حتى لو تعذر حفظه.
     }
   }
 
   async function pickImage() {
-    setError("");
+    setAttachmentMenuVisible(false);
+    setAttachmentError("");
+    setNetworkError("");
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -543,22 +448,22 @@ export default function App() {
       const asset = result.assets?.[0];
 
       if (!asset?.uri || !asset?.base64) {
-        setError(t[15]);
+        setAttachmentError(t.imagePickFailed);
         return;
       }
 
-      let mimeType = asset.mimeType;
-
-      if (!mimeType) {
-        mimeType = /\.png$/i.test(asset.fileName || "")
+      const mimeType =
+        asset.mimeType ||
+        (/\.png$/i.test(asset.fileName || "")
           ? "image/png"
           : /\.webp$/i.test(asset.fileName || "")
           ? "image/webp"
-          : "image/jpeg";
-      }
+          : "image/jpeg");
 
-      if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
-        setError(t[14]);
+      if (
+        !["image/jpeg", "image/png", "image/webp"].includes(mimeType)
+      ) {
+        setAttachmentError(t.unsupportedImage);
         return;
       }
 
@@ -567,7 +472,7 @@ export default function App() {
           asset.fileSize > MAX_IMAGE_BYTES) ||
         asset.base64.length > MAX_IMAGE_BASE64_LENGTH
       ) {
-        setError(t[13]);
+        setAttachmentError(t.imageTooLarge);
         return;
       }
 
@@ -575,9 +480,115 @@ export default function App() {
         uri: asset.uri,
         base64: asset.base64,
         mimeType,
+        name: asset.fileName || "image",
       });
+
+      setPendingFile(null);
     } catch {
-      setError(t[15]);
+      setAttachmentError(t.imagePickFailed);
+    }
+  }
+
+  async function pickDocument() {
+    setAttachmentMenuVisible(false);
+    setAttachmentError("");
+    setNetworkError("");
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          "application/pdf",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "text/plain",
+        ],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets?.[0];
+
+      if (!asset?.uri || !asset?.name) {
+        setAttachmentError(labels.fileUploadError);
+        return;
+      }
+
+      const extension = asset.name.split(".").pop()?.toLowerCase();
+
+      if (!["pdf", "docx", "txt"].includes(extension)) {
+        setAttachmentError(labels.fileUnsupported);
+        return;
+      }
+
+      if (
+        typeof asset.size === "number" &&
+        asset.size > MAX_FILE_BYTES
+      ) {
+        setAttachmentError(labels.fileTooLarge);
+        return;
+      }
+
+      setUploadingFile(true);
+
+      const form = new FormData();
+      const mimeType = asset.mimeType || getMimeFromExtension(asset.name);
+
+      if (Platform.OS === "web") {
+        let browserFile = asset.file;
+
+        if (!browserFile) {
+          const fileResponse = await fetch(asset.uri);
+          browserFile = await fileResponse.blob();
+        }
+
+        form.append("file", browserFile, asset.name);
+      } else {
+        form.append("file", {
+          uri: asset.uri,
+          name: asset.name,
+          type: mimeType,
+        });
+      }
+
+      const response = await fetch(`${baseUrl}/upload`, {
+        method: "POST",
+        body: form,
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || labels.fileUploadError);
+      }
+
+      const extractedText =
+        data.text ||
+        data.extractedText ||
+        data.extracted_text ||
+        data.content ||
+        data.document?.text ||
+        data.data?.text;
+
+      if (
+        typeof extractedText !== "string" ||
+        !extractedText.trim()
+      ) {
+        throw new Error(labels.fileUploadError);
+      }
+
+      setPendingFile({
+        name: data.name || data.filename || asset.name,
+        mimeType,
+        size: asset.size || null,
+        extractedText: extractedText.slice(0, MAX_EXTRACTED_TEXT),
+      });
+
+      setPendingImage(null);
+    } catch (err) {
+      setAttachmentError(err?.message || labels.fileUploadError);
+    } finally {
+      setUploadingFile(false);
     }
   }
 
@@ -588,355 +599,804 @@ export default function App() {
     try {
       await Linking.openURL(url);
     } catch {
-      setError(t[17]);
+      setNetworkError(t.serverError);
+    }
+  }
+
+  function openConversation(conversation) {
+    setActiveConversationId(conversation.id);
+    setMessages(cleanMessagesForStorage(conversation.messages));
+    setInput("");
+    setPendingImage(null);
+    setPendingFile(null);
+    setAttachmentError("");
+    setNetworkError("");
+    setHistoryModalVisible(false);
+  }
+
+  function startNewChat() {
+    setActiveConversationId(null);
+    setMessages([]);
+    setInput("");
+    setPendingImage(null);
+    setPendingFile(null);
+    setAttachmentError("");
+    setNetworkError("");
+    setHistoryModalVisible(false);
+  }
+
+  function deleteConversation(id) {
+    setConversations((previous) =>
+      previous.filter((item) => item.id !== id)
+    );
+
+    if (activeConversationId === id) {
+      setActiveConversationId(null);
+      setMessages([]);
+      setInput("");
+      setPendingImage(null);
+      setPendingFile(null);
     }
   }
 
   async function sendMessage() {
-    const text = input.trim();
+    const typedText = input.trim();
 
-    if ((!text && !pendingImage) || loading) return;
+    if (
+      (!typedText && !pendingImage && !pendingFile) ||
+      loading ||
+      uploadingFile
+    ) {
+      return;
+    }
+
+    const conversationId = activeConversationId || makeId();
+
+    const displayText =
+      typedText ||
+      (pendingFile
+        ? `${labels.attachedFile}: ${pendingFile.name}`
+        : t.describeImage);
 
     const userMessage = {
-      id: `${Date.now()}-user`,
+      id: makeId(),
       role: "user",
-      content: text || t[12],
+      text: displayText,
       imageUri: pendingImage?.uri || null,
+      imageName: pendingImage?.name || null,
       imageBase64: pendingImage?.base64 || null,
       mimeType: pendingImage?.mimeType || null,
+      fileName: pendingFile?.name || null,
+      fileMimeType: pendingFile?.mimeType || null,
+      documentContext: pendingFile?.extractedText || null,
       sources: [],
     };
 
     const updatedMessages = [...messages, userMessage];
 
+    setActiveConversationId(conversationId);
     setMessages(updatedMessages);
     setInput("");
     setPendingImage(null);
-    setError("");
+    setPendingFile(null);
+    setAttachmentError("");
+    setNetworkError("");
     setLoading(true);
 
     try {
-      // إرسال آخر 12 رسالة، مع صورة واحدة فقط لتقليل حجم الطلب.
       const history = updatedMessages.slice(-12);
 
       let lastImageIndex = -1;
 
-      history.forEach((message, index) => {
-        if (message.imageBase64) lastImageIndex = index;
+      history.forEach((item, index) => {
+        if (item.imageBase64) lastImageIndex = index;
       });
 
-      const apiMessages = history.map((message, index) => ({
-        role: message.role,
-        content: message.content || "",
-        ...(message.imageBase64 && index === lastImageIndex
-          ? {
-              imageBase64: message.imageBase64,
-              mimeType: message.mimeType,
-            }
-          : {}),
-      }));
+      const apiMessages = history.map((item, index) => {
+        let content = item.text || "";
 
-      const baseUrl = API_BASE_URL.replace(/\/+$/, "");
+        if (item.documentContext) {
+          content +=
+            `\n\n[Extracted text from attached file: ${item.fileName || "document"}]\n` +
+            item.documentContext;
+        }
+
+        return {
+          role: item.role,
+          content,
+          ...(item.imageBase64 && index === lastImageIndex
+            ? {
+                imageBase64: item.imageBase64,
+                mimeType: item.mimeType,
+              }
+            : {}),
+        };
+      });
 
       const response = await fetch(`${baseUrl}/chat`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: apiMessages,
-          language: languageCode,
+          language,
         }),
       });
 
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || t[17]);
+        if (response.status === 429) {
+          throw new Error(t.quotaError);
+        }
+
+        throw new Error(data.error || t.serverError);
       }
 
       setMessages((current) => [
         ...current,
         {
-          id: `${Date.now()}-assistant`,
+          id: makeId(),
           role: "assistant",
-          content:
-            typeof data.reply === "string" ? data.reply : t[17],
+          text:
+            typeof data.reply === "string"
+              ? data.reply
+              : t.serverError,
           sources: Array.isArray(data.sources) ? data.sources : [],
           searched: Boolean(data.searched),
-          searchNotice: data.searchNotice || "",
+          searchNotice:
+            typeof data.searchNotice === "string"
+              ? data.searchNotice
+              : "",
         },
       ]);
     } catch (err) {
-      setError(err?.message || t[16]);
+      setNetworkError(err?.message || t.networkError);
     } finally {
       setLoading(false);
     }
   }
 
-  function newChat() {
-    setMessages([]);
-    setInput("");
-    setPendingImage(null);
-    setError("");
-  }
+  const historyPanel = (
+    <View
+      style={[
+        styles.historySidebar,
+        !showDesktopHistory && styles.mobileHistoryPanel,
+      ]}
+    >
+      <View style={styles.historyHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.historyTitle}>{labels.history}</Text>
+          <Text style={styles.historySubtitle}>
+            {labels.historySaved}
+          </Text>
+        </View>
+
+        {!showDesktopHistory && (
+          <Pressable
+            onPress={() => setHistoryModalVisible(false)}
+            style={styles.closeHistoryButton}
+          >
+            <Text style={styles.closeHistoryText}>×</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <Pressable
+        style={styles.newChatButton}
+        onPress={startNewChat}
+      >
+        <Text style={styles.newChatButtonText}>
+          ＋ {t.newChat}
+        </Text>
+      </Pressable>
+
+      <ScrollView
+        style={styles.historyList}
+        contentContainerStyle={styles.historyListContent}
+      >
+        {conversations.length === 0 ? (
+          <Text style={styles.emptyHistory}>
+            {labels.emptyHistory}
+          </Text>
+        ) : (
+          conversations
+            .slice()
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .map((conversation) => {
+              const previewMessage = [
+                ...(conversation.messages || []),
+              ]
+                .reverse()
+                .find((item) => item.role === "user");
+
+              const preview =
+                conversation.title ||
+                previewMessage?.text ||
+                labels.untitled;
+
+              return (
+                <View
+                  key={conversation.id}
+                  style={[
+                    styles.historyItem,
+                    conversation.id === activeConversationId &&
+                      styles.historyItemActive,
+                  ]}
+                >
+                  <Pressable
+                    style={styles.historyItemOpen}
+                    onPress={() => openConversation(conversation)}
+                    accessibilityRole="button"
+                  >
+                    <Text
+                      style={styles.historyItemTitle}
+                      numberOfLines={1}
+                    >
+                      {preview}
+                    </Text>
+
+                    <Text
+                      style={styles.historyItemPreview}
+                      numberOfLines={2}
+                    >
+                      {previewMessage?.text || labels.untitled}
+                    </Text>
+
+                    {previewMessage?.fileName ? (
+                      <Text style={styles.historyAttachment}>
+                        📎 {previewMessage.fileName}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.deleteChatButton}
+                    onPress={() => deleteConversation(conversation.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={labels.deleteChat}
+                  >
+                    <Text style={styles.deleteChatText}>×</Text>
+                  </Pressable>
+                </View>
+              );
+            })
+        )}
+      </ScrollView>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.screen}>
-        <View style={[styles.header, { flexDirection: direction }]}>
-          <View style={{ alignItems: isRTL ? "flex-end" : "flex-start" }}>
-            <Text style={styles.logo}>✦ Alaa :)</Text>
-            <Text style={styles.status}>{t[0]}</Text>
+      <View style={styles.workspace}>
+        <View style={styles.chatColumn}>
+          <View
+            style={[
+              styles.header,
+              { flexDirection: isRTL ? "row-reverse" : "row" },
+            ]}
+          >
+            <View
+              style={[
+                styles.brandBlock,
+                {
+                  alignItems: isRTL ? "flex-end" : "flex-start",
+                },
+              ]}
+            >
+              <View style={styles.brandLine}>
+                <View style={styles.logoBadge}>
+                  <Text style={styles.logoSpark}>✦</Text>
+                </View>
+                <Text style={styles.logo}>Alaa AI</Text>
+              </View>
+
+              <View
+                style={[
+                  styles.statusRow,
+                  {
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                  },
+                ]}
+              >
+                <View style={styles.onlineDot} />
+                <Text style={styles.statusText}>{t.status}</Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.headerActions,
+                { flexDirection: isRTL ? "row-reverse" : "row" },
+              ]}
+            >
+              {!showDesktopHistory && (
+                <Pressable
+                  style={styles.headerButton}
+                  onPress={() => setHistoryModalVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={labels.openHistory}
+                >
+                  <Text style={styles.headerButtonIcon}>☷</Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                style={styles.headerButton}
+                onPress={() => setLanguageModalVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel={t.chooseLanguage}
+              >
+                <Text style={styles.headerButtonIcon}>🌐</Text>
+                <Text style={styles.headerButtonText}>
+                  {selectedLanguage.code.toUpperCase()}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.headerButton}
+                onPress={startNewChat}
+                accessibilityRole="button"
+              >
+                <Text style={styles.headerButtonIcon}>＋</Text>
+                <Text style={styles.headerButtonText}>
+                  {t.newChat}
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
-          <View style={[styles.headerActions, { flexDirection: direction }]}>
-            <Pressable
-              style={styles.headerButton}
-              onPress={() => setLanguageModal(true)}
-              accessibilityRole="button"
-              accessibilityLabel={t[2]}
+          <KeyboardAvoidingView
+            style={styles.body}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <ScrollView
+              ref={scrollRef}
+              style={styles.chatScroll}
+              contentContainerStyle={styles.chatContent}
+              keyboardShouldPersistTaps="handled"
             >
-              <Text style={styles.headerButtonText}>
-                🌐 {language.code.toUpperCase()}
+              {messages.length === 0 && (
+                <View style={styles.welcomeCard}>
+                  <Text style={styles.welcomeSpark}>✦</Text>
+                  <Text
+                    style={[
+                      styles.welcomeTitle,
+                      { textAlign: textAlignment },
+                    ]}
+                  >
+                    {t.welcomeTitle}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.welcomeBody,
+                      { textAlign: textAlignment },
+                    ]}
+                  >
+                    {t.welcomeBody}
+                  </Text>
+                </View>
+              )}
+
+              {messages.map((item) => {
+                const isUser = item.role === "user";
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.messageRow,
+                      {
+                        justifyContent: isUser
+                          ? "flex-end"
+                          : "flex-start",
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.bubble,
+                        isUser ? styles.userBubble : styles.aiBubble,
+                      ]}
+                    >
+                      {!!item.imageUri && (
+                        <Image
+                          source={{ uri: item.imageUri }}
+                          style={styles.chatImage}
+                          resizeMode="cover"
+                          accessibilityLabel={t.attach}
+                        />
+                      )}
+
+                      {!!item.imageName && !item.imageUri && (
+                        <View style={styles.messageFileCard}>
+                          <Text style={styles.messageFileIcon}>🖼️</Text>
+                          <View style={styles.messageFileTextArea}>
+                            <Text
+                              style={styles.messageFileName}
+                              numberOfLines={2}
+                            >
+                              {item.imageName}
+                            </Text>
+                            <Text style={styles.messageFileType}>
+                              {t.attach}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {!!item.fileName && (
+                        <View style={styles.messageFileCard}>
+                          <Text style={styles.messageFileIcon}>📄</Text>
+                          <View style={styles.messageFileTextArea}>
+                            <Text
+                              style={styles.messageFileName}
+                              numberOfLines={2}
+                            >
+                              {item.fileName}
+                            </Text>
+                            <Text style={styles.messageFileType}>
+                              {item.fileMimeType || "Document"}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {!!item.text && (
+                        <Text
+                          selectable
+                          style={[
+                            styles.messageText,
+                            {
+                              textAlign: textAlignment,
+                              writingDirection: isRTL ? "rtl" : "ltr",
+                            },
+                          ]}
+                        >
+                          {item.text}
+                        </Text>
+                      )}
+
+                      {!isUser &&
+                        Array.isArray(item.sources) &&
+                        item.sources.length > 0 && (
+                          <View style={styles.sourcesBlock}>
+                            <Text
+                              style={[
+                                styles.sourcesTitle,
+                                { textAlign: textAlignment },
+                              ]}
+                            >
+                              {t.sources}
+                            </Text>
+
+                            {item.sources.map((source, index) => {
+                              const url = safeSourceUrl(source?.url);
+                              if (!url) return null;
+
+                              return (
+                                <Pressable
+                                  key={`${url}-${index}`}
+                                  onPress={() => openSource(url)}
+                                  style={[
+                                    styles.sourceLink,
+                                    {
+                                      flexDirection: isRTL
+                                        ? "row-reverse"
+                                        : "row",
+                                    },
+                                  ]}
+                                  accessibilityRole="link"
+                                  accessibilityLabel={`${t.openLink}: ${
+                                    source.title || url
+                                  }`}
+                                >
+                                  <Text style={styles.sourceIcon}>↗</Text>
+                                  <Text
+                                    style={[
+                                      styles.sourceText,
+                                      { textAlign: textAlignment },
+                                    ]}
+                                  >
+                                    {source.title || url}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        )}
+
+                      {!isUser &&
+                      item.searched === false &&
+                      item.searchNotice ? (
+                        <Text
+                          style={[
+                            styles.noticeText,
+                            { textAlign: textAlignment },
+                          ]}
+                        >
+                          {t.notVerified}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+
+              {(loading || uploadingFile) && (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color="#B9A0FF" />
+                  <Text style={styles.loadingText}>
+                    {uploadingFile ? labels.uploading : t.thinking}
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            {!!networkError && (
+              <View style={styles.errorBanner}>
+                <Text
+                  style={[
+                    styles.errorText,
+                    { textAlign: textAlignment },
+                  ]}
+                >
+                  {networkError}
+                </Text>
+                <Pressable onPress={() => setNetworkError("")}>
+                  <Text style={styles.errorDismiss}>×</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!!attachmentError && (
+              <View style={styles.errorBanner}>
+                <Text
+                  style={[
+                    styles.errorText,
+                    { textAlign: textAlignment },
+                  ]}
+                >
+                  {attachmentError}
+                </Text>
+                <Pressable onPress={() => setAttachmentError("")}>
+                  <Text style={styles.errorDismiss}>×</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!!pendingImage && (
+              <View
+                style={[
+                  styles.pendingAttachmentBar,
+                  {
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                  },
+                ]}
+              >
+                <Image
+                  source={{ uri: pendingImage.uri }}
+                  style={styles.pendingImage}
+                  resizeMode="cover"
+                />
+
+                <Text
+                  style={[
+                    styles.pendingLabel,
+                    { textAlign: textAlignment },
+                  ]}
+                >
+                  {pendingImage.name || t.attach}
+                </Text>
+
+                <Pressable
+                  onPress={() => setPendingImage(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.remove}
+                  style={styles.removeAttachmentButton}
+                >
+                  <Text style={styles.removeAttachmentText}>×</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!!pendingFile && (
+              <View
+                style={[
+                  styles.pendingAttachmentBar,
+                  {
+                    flexDirection: isRTL ? "row-reverse" : "row",
+                  },
+                ]}
+              >
+                <View style={styles.pendingFileIconBox}>
+                  <Text style={styles.pendingFileIcon}>📄</Text>
+                </View>
+
+                <View style={styles.pendingFileTextArea}>
+                  <Text
+                    style={[
+                      styles.pendingLabel,
+                      { textAlign: textAlignment },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {pendingFile.name}
+                  </Text>
+                  <Text style={styles.pendingFileSubLabel}>
+                    {labels.attachedFile}
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={() => setPendingFile(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.remove}
+                  style={styles.removeAttachmentButton}
+                >
+                  <Text style={styles.removeAttachmentText}>×</Text>
+                </Pressable>
+              </View>
+            )}
+
+            <View style={styles.composerOuter}>
+              <View
+                style={[
+                  styles.composer,
+                  { flexDirection: isRTL ? "row-reverse" : "row" },
+                ]}
+              >
+                <Pressable
+                  style={styles.attachButton}
+                  onPress={() => setAttachmentMenuVisible(true)}
+                  disabled={loading || uploadingFile}
+                  accessibilityRole="button"
+                  accessibilityLabel={labels.chooseFile}
+                >
+                  <Text style={styles.attachIcon}>＋</Text>
+                </Pressable>
+
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      textAlign: textAlignment,
+                      writingDirection: isRTL ? "rtl" : "ltr",
+                    },
+                  ]}
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder={t.placeholder}
+                  placeholderTextColor="#9097B2"
+                  multiline
+                  maxLength={MAX_MESSAGE_LENGTH}
+                  editable={!loading && !uploadingFile}
+                  accessibilityLabel={t.placeholder}
+                />
+
+                <Pressable
+                  style={[
+                    styles.sendButton,
+                    (loading || uploadingFile) &&
+                      styles.sendButtonDisabled,
+                  ]}
+                  onPress={sendMessage}
+                  disabled={
+                    loading ||
+                    uploadingFile ||
+                    (!input.trim() && !pendingImage && !pendingFile)
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={t.send}
+                >
+                  <Text style={styles.sendIcon}>➤</Text>
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+
+        {showDesktopHistory && historyPanel}
+      </View>
+
+      {!showDesktopHistory && (
+        <Modal
+          visible={historyModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setHistoryModalVisible(false)}
+        >
+          <View style={styles.drawerBackdrop}>
+            <Pressable
+              style={styles.drawerScrim}
+              onPress={() => setHistoryModalVisible(false)}
+            />
+            {historyPanel}
+          </View>
+        </Modal>
+      )}
+
+      <Modal
+        visible={attachmentMenuVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAttachmentMenuVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setAttachmentMenuVisible(false)}
+          />
+
+          <View style={styles.optionModal}>
+            <View style={styles.modalTopRow}>
+              <Text style={styles.modalTitle}>{labels.attachedFile}</Text>
+              <Pressable
+                onPress={() => setAttachmentMenuVisible(false)}
+                style={styles.closeModalButton}
+              >
+                <Text style={styles.closeModalText}>×</Text>
+              </Pressable>
+            </View>
+
+            <Pressable
+              style={styles.attachmentOption}
+              onPress={pickImage}
+            >
+              <Text style={styles.attachmentOptionIcon}>🖼️</Text>
+              <Text style={styles.attachmentOptionText}>
+                {labels.choosePhoto}
               </Text>
             </Pressable>
 
             <Pressable
-              style={styles.headerButton}
-              onPress={newChat}
-              accessibilityRole="button"
+              style={styles.attachmentOption}
+              onPress={pickDocument}
             >
-              <Text style={styles.headerButtonText}>＋ {t[1]}</Text>
+              <Text style={styles.attachmentOptionIcon}>📄</Text>
+              <Text style={styles.attachmentOptionText}>
+                {labels.chooseFile}
+              </Text>
             </Pressable>
+
+            <Text style={styles.fileNote}>
+              DOCX · PDF · TXT · Max 4 MB
+            </Text>
           </View>
         </View>
-
-        <KeyboardAvoidingView
-          style={styles.body}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-          <ScrollView
-            ref={scrollRef}
-            style={styles.chatScroll}
-            contentContainerStyle={styles.chatContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {messages.length === 0 && (
-              <View style={styles.welcomeCard}>
-                <Text style={styles.welcomeSymbol}>✦</Text>
-                <Text
-                  style={[
-                    styles.welcomeTitle,
-                    { textAlign: alignment },
-                  ]}
-                >
-                  {t[10]}
-                </Text>
-                <Text
-                  style={[
-                    styles.welcomeBody,
-                    { textAlign: alignment },
-                  ]}
-                >
-                  {t[11]}
-                </Text>
-              </View>
-            )}
-
-            {messages.map((message) => {
-              const isUser = message.role === "user";
-
-              return (
-                <View
-                  key={message.id}
-                  style={[
-                    styles.messageRow,
-                    {
-                      justifyContent: isUser ? "flex-end" : "flex-start",
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.bubble,
-                      isUser ? styles.userBubble : styles.aiBubble,
-                    ]}
-                  >
-                    {message.imageUri ? (
-                      <Image
-                        source={{ uri: message.imageUri }}
-                        style={styles.chatImage}
-                        resizeMode="cover"
-                      />
-                    ) : null}
-
-                    {message.content ? (
-                      <Text
-                        selectable
-                        style={[
-                          styles.messageText,
-                          {
-                            textAlign: alignment,
-                            writingDirection: isRTL ? "rtl" : "ltr",
-                          },
-                        ]}
-                      >
-                        {message.content}
-                      </Text>
-                    ) : null}
-
-                    {!isUser && message.sources?.length > 0 ? (
-                      <View style={styles.sourcesBlock}>
-                        <Text style={styles.sourcesTitle}>{t[8]}</Text>
-
-                        {message.sources.map((source, index) => {
-                          const url = safeSourceUrl(source?.url);
-                          if (!url) return null;
-
-                          return (
-                            <Pressable
-                              key={`${url}-${index}`}
-                              onPress={() => openSource(url)}
-                              style={styles.sourceLink}
-                              accessibilityRole="link"
-                            >
-                              <Text style={styles.sourceText}>
-                                {source.title || url} ↗
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-
-            {loading && (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator color="#B9A0FF" />
-                <Text style={styles.loadingText}>{t[9]}</Text>
-              </View>
-            )}
-          </ScrollView>
-
-          {!!error && (
-            <Pressable
-              style={styles.errorBanner}
-              onPress={() => setError("")}
-            >
-              <Text style={styles.errorText}>{error}</Text>
-              <Text style={styles.dismissText}>×</Text>
-            </Pressable>
-          )}
-
-          {!!pendingImage && (
-            <View
-              style={[
-                styles.pendingImageBar,
-                { flexDirection: direction },
-              ]}
-            >
-              <Image
-                source={{ uri: pendingImage.uri }}
-                style={styles.pendingImage}
-                resizeMode="cover"
-              />
-
-              <Text style={styles.pendingLabel}>{t[6]}</Text>
-
-              <Pressable
-                onPress={() => setPendingImage(null)}
-                accessibilityRole="button"
-                accessibilityLabel={t[7]}
-                style={styles.removeButton}
-              >
-                <Text style={styles.removeButtonText}>×</Text>
-              </Pressable>
-            </View>
-          )}
-
-          <View style={styles.composerOuter}>
-            <View
-              style={[
-                styles.composer,
-                { flexDirection: direction },
-              ]}
-            >
-              <Pressable
-                style={styles.attachButton}
-                onPress={pickImage}
-                disabled={loading}
-                accessibilityRole="button"
-                accessibilityLabel={t[6]}
-              >
-                <Text style={styles.attachIcon}>＋</Text>
-              </Pressable>
-
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    textAlign: alignment,
-                    writingDirection: isRTL ? "rtl" : "ltr",
-                  },
-                ]}
-                value={input}
-                onChangeText={setInput}
-                placeholder={t[4]}
-                placeholderTextColor="#9097B2"
-                multiline
-                maxLength={MAX_MESSAGE_LENGTH}
-                editable={!loading}
-                accessibilityLabel={t[4]}
-              />
-
-              <Pressable
-                style={[
-                  styles.sendButton,
-                  loading && styles.disabledButton,
-                ]}
-                onPress={sendMessage}
-                disabled={loading || (!input.trim() && !pendingImage)}
-                accessibilityRole="button"
-                accessibilityLabel={t[5]}
-              >
-                <Text style={styles.sendIcon}>➤</Text>
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
+      </Modal>
 
       <Modal
-        visible={languageModal}
+        visible={languageModalVisible}
         animationType="fade"
         transparent
-        onRequestClose={() => setLanguageModal(false)}
+        onRequestClose={() => setLanguageModalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.languageModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t[2]}</Text>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setLanguageModalVisible(false)}
+          />
 
+          <View style={styles.languageModal}>
+            <View style={styles.modalTopRow}>
+              <Text style={styles.modalTitle}>{t.chooseLanguage}</Text>
               <Pressable
-                onPress={() => setLanguageModal(false)}
-                accessibilityRole="button"
+                onPress={() => setLanguageModalVisible(false)}
+                style={styles.closeModalButton}
+                accessibilityLabel="Close"
               >
-                <Text style={styles.closeButton}>×</Text>
+                <Text style={styles.closeModalText}>×</Text>
               </Pressable>
             </View>
 
             <TextInput
               value={languageQuery}
               onChangeText={setLanguageQuery}
-              placeholder={t[3]}
+              placeholder={t.searchLanguage}
               placeholderTextColor="#9097B2"
               style={[
                 styles.languageSearch,
-                { textAlign: alignment },
+                { textAlign: textAlignment },
               ]}
               autoCorrect={false}
             />
@@ -948,25 +1408,28 @@ export default function App() {
               {filteredLanguages.map((item) => (
                 <Pressable
                   key={item.code}
-                  onPress={() => changeLanguage(item.code)}
+                  onPress={() => chooseLanguage(item.code)}
                   style={[
                     styles.languageItem,
-                    item.code === languageCode &&
-                      styles.languageItemSelected,
+                    item.code === language && styles.languageItemSelected,
                     {
                       flexDirection: item.rtl ? "row-reverse" : "row",
                     },
                   ]}
                 >
                   <Text style={styles.languageName}>{item.name}</Text>
-                  <Text style={styles.languageCheck}>
-                    {item.code === languageCode ? "✓" : ""}
+                  <Text style={styles.languageCode}>
+                    {item.code === language
+                      ? "✓"
+                      : item.code.toUpperCase()}
                   </Text>
                 </Pressable>
               ))}
 
               {filteredLanguages.length === 0 && (
-                <Text style={styles.noLanguages}>{t[18]}</Text>
+                <Text style={styles.noLanguages}>
+                  {t.noLanguages}
+                </Text>
               )}
             </ScrollView>
           </View>
@@ -981,32 +1444,68 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#090D1B",
   },
-  screen: {
+  workspace: {
     flex: 1,
     width: "100%",
-    maxWidth: 1000,
-    alignSelf: "center",
+    flexDirection: "row",
+    backgroundColor: "#090D1B",
+  },
+  chatColumn: {
+    flex: 1,
+    minWidth: 0,
     backgroundColor: "#090D1B",
   },
   header: {
-    minHeight: 76,
-    paddingHorizontal: 16,
+    minHeight: 78,
+    paddingHorizontal: 18,
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#252B45",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
+    gap: 12,
+  },
+  brandBlock: {
+    flex: 1,
+  },
+  brandLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  logoBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#7662F0",
+  },
+  logoSpark: {
+    color: "#FFFFFF",
+    fontSize: 23,
+    fontWeight: "800",
   },
   logo: {
     color: "#C4B2FF",
     fontWeight: "800",
     fontSize: 24,
+    letterSpacing: 0.3,
   },
-  status: {
+  statusRow: {
+    alignItems: "center",
+    gap: 6,
+    marginTop: 5,
+  },
+  onlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 5,
+    backgroundColor: "#54D6A1",
+  },
+  statusText: {
     color: "#A9F0D0",
     fontSize: 12,
-    marginTop: 4,
   },
   headerActions: {
     alignItems: "center",
@@ -1015,12 +1514,17 @@ const styles = StyleSheet.create({
   headerButton: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 5,
     borderColor: "#303654",
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 13,
     paddingVertical: 9,
     paddingHorizontal: 10,
     backgroundColor: "#151A30",
+  },
+  headerButtonIcon: {
+    fontSize: 16,
+    color: "#D9D0FF",
   },
   headerButtonText: {
     color: "#E8E9F6",
@@ -1029,29 +1533,30 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    minHeight: 0,
   },
   chatScroll: {
     flex: 1,
   },
   chatContent: {
     padding: 16,
-    paddingBottom: 25,
+    paddingBottom: 28,
     flexGrow: 1,
   },
   welcomeCard: {
     width: "100%",
-    maxWidth: 550,
+    maxWidth: 530,
     alignSelf: "center",
     marginTop: 45,
-    padding: 24,
-    borderRadius: 23,
+    padding: 25,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: "#2B3150",
     backgroundColor: "#141A30",
   },
-  welcomeSymbol: {
+  welcomeSpark: {
     color: "#B9A0FF",
-    fontSize: 33,
+    fontSize: 34,
     marginBottom: 12,
   },
   welcomeTitle: {
@@ -1067,221 +1572,483 @@ const styles = StyleSheet.create({
   },
   messageRow: {
     width: "100%",
-    marginBottom: 14,
+    marginBottom: 13,
   },
   bubble: {
     maxWidth: "88%",
+    borderRadius: 20,
     padding: 13,
-    borderRadius: 19,
-    gap: 9,
+    borderWidth: 1,
+    gap: 8,
   },
   userBubble: {
     backgroundColor: "#6655E8",
-    borderBottomRightRadius: 5,
+    borderColor: "#7869F1",
+    borderBottomRightRadius: 6,
   },
   aiBubble: {
-    backgroundColor: "#202641",
-    borderBottomLeftRadius: 5,
+    backgroundColor: "#1B223B",
+    borderColor: "#2A3150",
+    borderBottomLeftRadius: 6,
   },
   messageText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    lineHeight: 24,
+    color: "#F8F8FF",
+    fontSize: 15,
+    lineHeight: 23,
+    writingDirection: "auto",
   },
   chatImage: {
-    width: 230,
-    height: 230,
+    width: 240,
+    height: 240,
+    borderRadius: 13,
+    marginBottom: 8,
+    backgroundColor: "#0F1426",
+  },
+  messageFileCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minWidth: 175,
+    maxWidth: 280,
+    padding: 10,
     borderRadius: 12,
-    backgroundColor: "#101629",
+    backgroundColor: "rgba(9,13,27,0.35)",
+  },
+  messageFileIcon: {
+    fontSize: 25,
+  },
+  messageFileTextArea: {
+    flex: 1,
+    minWidth: 0,
+  },
+  messageFileName: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  messageFileType: {
+    color: "#D3D5E9",
+    fontSize: 10,
+    marginTop: 3,
   },
   sourcesBlock: {
-    marginTop: 5,
+    marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "#454D6A",
+    borderTopColor: "#373F61",
     gap: 7,
   },
   sourcesTitle: {
-    color: "#D9CEFF",
-    fontSize: 14,
-    fontWeight: "700",
+    color: "#D6CAFF",
+    fontWeight: "800",
+    fontSize: 13,
+    marginBottom: 3,
   },
   sourceLink: {
-    alignSelf: "flex-start",
-    paddingVertical: 4,
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: "#10162A",
+    borderRadius: 9,
+    padding: 9,
+  },
+  sourceIcon: {
+    color: "#AFA0FF",
+    fontSize: 16,
   },
   sourceText: {
-    color: "#AFC8FF",
+    color: "#C7BCFF",
     textDecorationLine: "underline",
     fontSize: 13,
+    flexShrink: 1,
+  },
+  noticeText: {
+    color: "#B7BDD1",
+    fontSize: 11,
+    marginTop: 9,
+    lineHeight: 16,
   },
   loadingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    padding: 12,
-  },
-  loadingText: {
-    color: "#B9A0FF",
-  },
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#3A1E32",
-    padding: 11,
-    marginHorizontal: 12,
-    marginBottom: 7,
-    borderRadius: 12,
-  },
-  errorText: {
-    color: "#FFD4DD",
-    flex: 1,
-  },
-  dismissText: {
-    color: "#FFD4DD",
-    fontSize: 20,
+    paddingVertical: 12,
     paddingHorizontal: 8,
   },
-  pendingImageBar: {
+  loadingText: {
+    color: "#C8CBE0",
+    fontSize: 13,
+  },
+  errorBanner: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: "#3A1D30",
+    borderWidth: 1,
+    borderColor: "#8D355D",
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  errorText: {
+    flex: 1,
+    color: "#FFD6E7",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  errorDismiss: {
+    color: "#FFD6E7",
+    fontSize: 22,
+    paddingHorizontal: 5,
+  },
+  pendingAttachmentBar: {
     alignItems: "center",
     gap: 10,
-    padding: 10,
+    paddingHorizontal: 15,
+    paddingTop: 10,
   },
   pendingImage: {
-    width: 60,
-    height: 60,
+    width: 52,
+    height: 52,
     borderRadius: 10,
+    backgroundColor: "#1D2440",
   },
   pendingLabel: {
-    color: "#FFFFFF",
     flex: 1,
+    color: "#DDE0F1",
+    fontSize: 12,
   },
-  removeButton: {
-    width: 34,
-    height: 34,
+  pendingFileIconBox: {
+    width: 52,
+    height: 52,
     borderRadius: 10,
+    backgroundColor: "#1D2440",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#32243B",
   },
-  removeButtonText: {
-    color: "#FFD4DD",
-    fontSize: 23,
+  pendingFileIcon: {
+    fontSize: 25,
+  },
+  pendingFileTextArea: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  pendingFileSubLabel: {
+    color: "#A9F0D0",
+    fontSize: 11,
+  },
+  removeAttachmentButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#3D263D",
+  },
+  removeAttachmentText: {
+    color: "#FFD6E7",
+    fontSize: 21,
+    lineHeight: 24,
   },
   composerOuter: {
     padding: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "#242943",
-    backgroundColor: "#090D1B",
+    borderTopColor: "#242A43",
   },
   composer: {
     alignItems: "flex-end",
-    gap: 8,
+    gap: 9,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#343A5A",
+    borderRadius: 22,
+    backgroundColor: "#151B31",
   },
   attachButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
+    height: 42,
+    width: 42,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#202641",
+    backgroundColor: "#252B49",
   },
   attachIcon: {
-    color: "#FFFFFF",
+    color: "#D4CBFF",
     fontSize: 25,
+    lineHeight: 29,
   },
   input: {
     flex: 1,
-    color: "#FFFFFF",
-    backgroundColor: "#202641",
-    borderWidth: 1,
-    borderColor: "#333B5A",
-    borderRadius: 18,
-    minHeight: 46,
     maxHeight: 120,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
+    minHeight: 42,
+    color: "#FFFFFF",
+    fontSize: 15,
+    paddingHorizontal: 7,
+    paddingTop: 10,
+    paddingBottom: 7,
   },
   sendButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
+    height: 42,
+    width: 42,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#8065FF",
+    backgroundColor: "#7C65F4",
   },
-  disabledButton: {
-    opacity: 0.5,
+  sendButtonDisabled: {
+    opacity: 0.45,
   },
   sendIcon: {
     color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "bold",
+    fontSize: 20,
+    fontWeight: "800",
   },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.65)",
     justifyContent: "center",
+    alignItems: "center",
     padding: 18,
   },
-  languageModal: {
-    maxHeight: "85%",
-    backgroundColor: "#131A2E",
+  optionModal: {
+    width: "100%",
+    maxWidth: 480,
+    backgroundColor: "#141A30",
     borderRadius: 22,
-    padding: 18,
+    borderColor: "#353C5C",
+    borderWidth: 1,
+    padding: 16,
   },
-  modalHeader: {
+  attachmentOption: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 13,
+    gap: 12,
+    paddingVertical: 15,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#202641",
+    marginTop: 8,
   },
-  modalTitle: {
+  attachmentOptionIcon: {
+    fontSize: 23,
+  },
+  attachmentOptionText: {
+    color: "#F3F1FF",
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+  },
+  fileNote: {
+    color: "#8F98B8",
+    fontSize: 11,
+    marginTop: 13,
+    textAlign: "center",
+  },
+  historySidebar: {
+    width: 285,
+    flexShrink: 0,
+    height: "100%",
+    padding: 15,
+    backgroundColor: "#101629",
+    borderLeftWidth: 1,
+    borderLeftColor: "#292F4A",
+  },
+  mobileHistoryPanel: {
+    width: "88%",
+    maxWidth: 360,
+    height: "100%",
+    alignSelf: "flex-end",
+    borderLeftWidth: 1,
+    borderLeftColor: "#353C5C",
+  },
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#292F4A",
+  },
+  historyTitle: {
+    color: "#F3F1FF",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  historySubtitle: {
+    color: "#878FAB",
+    fontSize: 10,
+    marginTop: 4,
+  },
+  closeHistoryButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#252B49",
+  },
+  closeHistoryText: {
     color: "#FFFFFF",
-    fontSize: 20,
+    fontSize: 22,
+  },
+  newChatButton: {
+    marginTop: 14,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#6D59EA",
+    alignItems: "center",
+  },
+  newChatButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  historyList: {
+    flex: 1,
+  },
+  historyListContent: {
+    gap: 8,
+    paddingBottom: 20,
+  },
+  emptyHistory: {
+    color: "#969EB8",
+    textAlign: "center",
+    paddingHorizontal: 10,
+    paddingTop: 25,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  historyItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    backgroundColor: "#171E34",
+    borderWidth: 1,
+    borderColor: "#252D48",
+    overflow: "hidden",
+  },
+  historyItemActive: {
+    borderColor: "#806BFA",
+    backgroundColor: "#232044",
+  },
+  historyItemOpen: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 11,
+    paddingVertical: 11,
+    gap: 5,
+  },
+  historyItemTitle: {
+    color: "#F2F1FF",
+    fontSize: 12,
     fontWeight: "700",
   },
-  closeButton: {
+  historyItemPreview: {
+    color: "#969FBD",
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  historyAttachment: {
+    color: "#B9A0FF",
+    fontSize: 10,
+  },
+  deleteChatButton: {
+    alignSelf: "stretch",
+    width: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderLeftWidth: 1,
+    borderLeftColor: "#29314B",
+  },
+  deleteChatText: {
+    color: "#D79AB4",
+    fontSize: 20,
+  },
+  drawerBackdrop: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  drawerScrim: {
+    flex: 1,
+  },
+  languageModal: {
+    width: "100%",
+    maxWidth: 520,
+    maxHeight: "82%",
+    alignSelf: "center",
+    backgroundColor: "#141A30",
+    borderRadius: 22,
+    borderColor: "#353C5C",
+    borderWidth: 1,
+    padding: 16,
+  },
+  modalTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  modalTitle: {
+    color: "#F3F1FF",
+    fontSize: 19,
+    fontWeight: "800",
+  },
+  closeModalButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#282E4B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeModalText: {
     color: "#FFFFFF",
-    fontSize: 26,
-    paddingHorizontal: 6,
+    fontSize: 24,
+    lineHeight: 27,
   },
   languageSearch: {
-    backgroundColor: "#202641",
     color: "#FFFFFF",
+    backgroundColor: "#0D1224",
+    borderColor: "#353C5C",
+    borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     marginBottom: 10,
   },
   languageList: {
     flexGrow: 0,
   },
   languageItem: {
+    minHeight: 46,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 13,
-    paddingHorizontal: 9,
+    borderRadius: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#29314B",
+    borderBottomColor: "#262D48",
   },
   languageItemSelected: {
-    backgroundColor: "#252344",
-    borderRadius: 9,
+    backgroundColor: "#2A2450",
+    borderBottomColor: "#7665D7",
   },
   languageName: {
-    color: "#FFFFFF",
+    color: "#F0F1FC",
     fontSize: 15,
   },
-  languageCheck: {
-    color: "#B9A0FF",
-    fontWeight: "800",
-    fontSize: 18,
+  languageCode: {
+    color: "#BBAEFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   noLanguages: {
-    color: "#9CA3AF",
+    color: "#BDC4DC",
     textAlign: "center",
     padding: 20,
   },
