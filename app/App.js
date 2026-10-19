@@ -1,604 +1,1069 @@
-
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
   SafeAreaView,
-  View,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
-  Pressable,
-  ScrollView,
-  Image,
-  Modal,
-  FlatList,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Linking,
-  StyleSheet,
+  View,
 } from "react-native";
 
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL } from "./src/config";
 
-// كل لغة تحتوي ترجمة فعلية للنصوص المعروضة في هذه الشاشة.
+const MAX_MESSAGE_LENGTH = 20000;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_IMAGE_BASE64_LENGTH = 5600000;
+const LANGUAGE_STORAGE_KEY = "alaa_ai_language_v1";
+
+// ترتيب النصوص بكل لغة:
+// status, newChat, chooseLanguage, searchLanguage, placeholder,
+// send, attach, remove, sources, thinking, welcomeTitle, welcomeBody,
+// describeImage, imageTooLarge, unsupportedImage, imagePickFailed,
+// networkError, serverError, noLanguages
+
 const LANGUAGES = [
-  { code: "ar", name: "العربية", rtl: true, v: ["متصل الآن","اكتب رسالتك...","إرسال","إرفاق صورة","إزالة الصورة","المصادر","محادثة جديدة","اختر اللغة","ابحث عن لغة...","جاري التفكير...","أهلًا! أنا Alaa :) كيف أقدر أساعدك؟","تعذر الاتصال بالخادم.","الصورة كبيرة جدًا. اختر صورة أصغر.","ابدأ محادثة جديدة"] },
-  { code: "en", name: "English", rtl: false, v: ["Online now","Type your message...","Send","Attach image","Remove image","Sources","New chat","Choose language","Search languages...","Thinking...","Hello! I'm Alaa :). How can I help?","Could not connect to the server.","Image is too large. Choose a smaller image.","Start a new conversation"] },
-  { code: "fr", name: "Français", rtl: false, v: ["En ligne","Écrivez votre message...","Envoyer","Joindre une image","Supprimer l’image","Sources","Nouvelle discussion","Choisir la langue","Rechercher une langue...","Réflexion...","Bonjour ! Je suis Alaa :). Comment puis-je vous aider ?","Connexion au serveur impossible.","Image trop volumineuse. Choisissez-en une plus petite.","Commencer une conversation"] },
-  { code: "es", name: "Español", rtl: false, v: ["En línea","Escribe tu mensaje...","Enviar","Adjuntar imagen","Eliminar imagen","Fuentes","Nuevo chat","Elegir idioma","Buscar idiomas...","Pensando...","¡Hola! Soy Alaa :). ¿Cómo puedo ayudarte?","No se pudo conectar al servidor.","La imagen es demasiado grande.","Iniciar una conversación"] },
-  { code: "de", name: "Deutsch", rtl: false, v: ["Jetzt online","Nachricht schreiben...","Senden","Bild anhängen","Bild entfernen","Quellen","Neuer Chat","Sprache wählen","Sprachen suchen...","Denke nach...","Hallo! Ich bin Alaa :). Wie kann ich helfen?","Serververbindung fehlgeschlagen.","Das Bild ist zu groß.","Neue Unterhaltung starten"] },
-  { code: "it", name: "Italiano", rtl: false, v: ["Online ora","Scrivi un messaggio...","Invia","Allega immagine","Rimuovi immagine","Fonti","Nuova chat","Scegli lingua","Cerca lingue...","Sto pensando...","Ciao! Sono Alaa :). Come posso aiutarti?","Connessione al server non riuscita.","L’immagine è troppo grande.","Inizia una conversazione"] },
-  { code: "pt", name: "Português", rtl: false, v: ["Online agora","Escreva sua mensagem...","Enviar","Anexar imagem","Remover imagem","Fontes","Nova conversa","Escolher idioma","Pesquisar idiomas...","Pensando...","Olá! Sou Alaa :). Como posso ajudar?","Não foi possível conectar ao servidor.","A imagem é muito grande.","Iniciar conversa"] },
-  { code: "tr", name: "Türkçe", rtl: false, v: ["Şu anda çevrimiçi","Mesajınızı yazın...","Gönder","Resim ekle","Resmi kaldır","Kaynaklar","Yeni sohbet","Dil seç","Dil ara...","Düşünüyor...","Merhaba! Ben Alaa :). Nasıl yardımcı olabilirim?","Sunucuya bağlanılamadı.","Resim çok büyük.","Yeni bir sohbet başlat"] },
-  { code: "ru", name: "Русский", rtl: false, v: ["В сети","Введите сообщение...","Отправить","Прикрепить изображение","Удалить изображение","Источники","Новый чат","Выбрать язык","Поиск языков...","Думаю...","Привет! Я Alaa :). Чем могу помочь?","Не удалось подключиться к серверу.","Изображение слишком большое.","Начать новый разговор"] },
-  { code: "zh-CN", name: "简体中文", rtl: false, v: ["在线","输入消息...","发送","附加图片","移除图片","来源","新对话","选择语言","搜索语言...","正在思考...","你好！我是 Alaa :)。有什么可以帮你？","无法连接服务器。","图片太大，请选择较小的图片。","开始新对话"] },
-  { code: "zh-TW", name: "繁體中文", rtl: false, v: ["目前在線","輸入訊息...","傳送","附加圖片","移除圖片","來源","新對話","選擇語言","搜尋語言...","思考中...","你好！我是 Alaa :)。有什麼可以幫你？","無法連線至伺服器。","圖片太大，請選擇較小的圖片。","開始新對話"] },
-  { code: "ja", name: "日本語", rtl: false, v: ["オンライン","メッセージを入力...","送信","画像を添付","画像を削除","ソース","新しいチャット","言語を選択","言語を検索...","考え中...","こんにちは！Alaa :) です。何をお手伝いできますか？","サーバーに接続できません。","画像が大きすぎます。","新しい会話を始める"] },
-  { code: "ko", name: "한국어", rtl: false, v: ["온라인","메시지를 입력하세요...","보내기","이미지 첨부","이미지 삭제","출처","새 채팅","언어 선택","언어 검색...","생각 중...","안녕하세요! 저는 Alaa :)입니다. 무엇을 도와드릴까요?","서버에 연결할 수 없습니다.","이미지가 너무 큽니다.","새 대화 시작"] },
-  { code: "hi", name: "हिन्दी", rtl: false, v: ["अभी ऑनलाइन","अपना संदेश लिखें...","भेजें","चित्र जोड़ें","चित्र हटाएँ","स्रोत","नई चैट","भाषा चुनें","भाषा खोजें...","सोच रहा हूँ...","नमस्ते! मैं Alaa :) हूँ। मैं कैसे मदद कर सकता हूँ?","सर्वर से कनेक्ट नहीं हो सका।","चित्र बहुत बड़ा है।","नई बातचीत शुरू करें"] },
-  { code: "ur", name: "اردو", rtl: true, v: ["ابھی آن لائن","اپنا پیغام لکھیں...","بھیجیں","تصویر منسلک کریں","تصویر ہٹائیں","ذرائع","نئی گفتگو","زبان منتخب کریں","زبان تلاش کریں...","سوچ رہا ہوں...","سلام! میں Alaa :) ہوں۔ میں کیسے مدد کر سکتا ہوں؟","سرور سے رابطہ نہیں ہو سکا۔","تصویر بہت بڑی ہے۔","نئی گفتگو شروع کریں"] },
-  { code: "bn", name: "বাংলা", rtl: false, v: ["এখন অনলাইন","আপনার বার্তা লিখুন...","পাঠান","ছবি সংযুক্ত করুন","ছবি সরান","সূত্র","নতুন চ্যাট","ভাষা নির্বাচন করুন","ভাষা খুঁজুন...","ভাবছি...","হ্যালো! আমি Alaa :)। কীভাবে সাহায্য করতে পারি?","সার্ভারে সংযোগ করা যায়নি।","ছবিটি অনেক বড়।","নতুন কথোপকথন শুরু করুন"] },
-  { code: "id", name: "Bahasa Indonesia", rtl: false, v: ["Sedang online","Tulis pesan...","Kirim","Lampirkan gambar","Hapus gambar","Sumber","Obrolan baru","Pilih bahasa","Cari bahasa...","Sedang berpikir...","Halo! Saya Alaa :). Ada yang bisa saya bantu?","Tidak dapat terhubung ke server.","Gambar terlalu besar.","Mulai percakapan baru"] },
-  { code: "ms", name: "Bahasa Melayu", rtl: false, v: ["Dalam talian sekarang","Taip mesej...","Hantar","Lampirkan imej","Buang imej","Sumber","Sembang baharu","Pilih bahasa","Cari bahasa...","Sedang berfikir...","Hai! Saya Alaa :). Apa yang boleh saya bantu?","Tidak dapat menyambung ke pelayan.","Imej terlalu besar.","Mulakan perbualan baharu"] },
-  { code: "th", name: "ไทย", rtl: false, v: ["ออนไลน์อยู่","พิมพ์ข้อความ...","ส่ง","แนบรูปภาพ","ลบรูปภาพ","แหล่งที่มา","แชตใหม่","เลือกภาษา","ค้นหาภาษา...","กำลังคิด...","สวัสดี! ฉันคือ Alaa :) มีอะไรให้ช่วยไหม?","เชื่อมต่อเซิร์ฟเวอร์ไม่ได้","รูปภาพมีขนาดใหญ่เกินไป","เริ่มการสนทนาใหม่"] },
-  { code: "vi", name: "Tiếng Việt", rtl: false, v: ["Đang trực tuyến","Nhập tin nhắn...","Gửi","Đính kèm ảnh","Xóa ảnh","Nguồn","Trò chuyện mới","Chọn ngôn ngữ","Tìm ngôn ngữ...","Đang suy nghĩ...","Xin chào! Tôi là Alaa :). Tôi có thể giúp gì?","Không thể kết nối máy chủ.","Ảnh quá lớn.","Bắt đầu cuộc trò chuyện mới"] },
-  { code: "fa", name: "فارسی", rtl: true, v: ["اکنون آنلاین","پیامتان را بنویسید...","ارسال","پیوست تصویر","حذف تصویر","منابع","گفتگوی جدید","انتخاب زبان","جستجوی زبان...","در حال فکر کردن...","سلام! من Alaa :) هستم. چطور کمک کنم؟","اتصال به سرور برقرار نشد.","تصویر خیلی بزرگ است.","شروع گفتگوی جدید"] },
-  { code: "he", name: "עברית", rtl: true, v: ["מחובר עכשיו","כתבו הודעה...","שליחה","צירוף תמונה","הסרת תמונה","מקורות","צ'אט חדש","בחירת שפה","חיפוש שפה...","חושב...","שלום! אני Alaa :). איך אפשר לעזור?","לא ניתן להתחבר לשרת.","התמונה גדולה מדי.","התחלת שיחה חדשה"] },
-  { code: "nl", name: "Nederlands", rtl: false, v: ["Nu online","Typ je bericht...","Verzenden","Afbeelding bijvoegen","Afbeelding verwijderen","Bronnen","Nieuwe chat","Taal kiezen","Talen zoeken...","Aan het denken...","Hallo! Ik ben Alaa :). Hoe kan ik helpen?","Kan geen verbinding maken met de server.","De afbeelding is te groot.","Nieuw gesprek starten"] },
-  { code: "pl", name: "Polski", rtl: false, v: ["Teraz online","Wpisz wiadomość...","Wyślij","Dodaj obraz","Usuń obraz","Źródła","Nowy czat","Wybierz język","Szukaj języka...","Myślę...","Cześć! Jestem Alaa :). W czym mogę pomóc?","Nie można połączyć się z serwerem.","Obraz jest za duży.","Rozpocznij nową rozmowę"] },
-  { code: "el", name: "Ελληνικά", rtl: false, v: ["Σε σύνδεση","Γράψτε το μήνυμά σας...","Αποστολή","Επισύναψη εικόνας","Αφαίρεση εικόνας","Πηγές","Νέα συνομιλία","Επιλογή γλώσσας","Αναζήτηση γλώσσας...","Σκέφτομαι...","Γεια! Είμαι το Alaa :). Πώς μπορώ να βοηθήσω;","Δεν ήταν δυνατή η σύνδεση με τον διακομιστή.","Η εικόνα είναι πολύ μεγάλη.","Έναρξη νέας συνομιλίας"] },
-  { code: "ro", name: "Română", rtl: false, v: ["Online acum","Scrie mesajul...","Trimite","Atașează imagine","Elimină imaginea","Surse","Chat nou","Alege limba","Caută limbi...","Mă gândesc...","Salut! Sunt Alaa :). Cu ce te pot ajuta?","Conectarea la server a eșuat.","Imaginea este prea mare.","Începe o conversație nouă"] },
+  {
+    code: "ar", name: "العربية", rtl: true,
+    v: [
+      "متصل الآن", "محادثة جديدة", "اختر اللغة", "ابحث عن لغة...",
+      "اكتب رسالتك...", "إرسال", "إرفاق صورة", "إزالة الصورة",
+      "المصادر", "جاري التفكير...", "أهلًا! أنا Alaa :)",
+      "اسألني عن أي شيء، أو أرفق صورة حتى أساعدك في فهمها.",
+      "صف هذه الصورة واشرح ما يظهر فيها.",
+      "حجم الصورة أكبر من 4 ميغابايت. اختر صورة أصغر.",
+      "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP.",
+      "تعذّر اختيار الصورة. حاول مرة أخرى.",
+      "تعذّر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.",
+      "تعذّر الحصول على إجابة. حاول مرة أخرى.",
+      "لم يتم العثور على لغة."
+    ]
+  },
+  {
+    code: "en", name: "English", rtl: false,
+    v: [
+      "Online now", "New chat", "Choose language", "Search languages...",
+      "Type your message...", "Send", "Attach image", "Remove image",
+      "Sources", "Thinking...", "Hi! I'm Alaa :)",
+      "Ask me anything, or attach an image and I'll help you understand it.",
+      "Describe this image and explain what is shown.",
+      "Image is larger than 4 MB. Choose a smaller image.",
+      "Unsupported image format. Use JPG, PNG, or WebP.",
+      "Could not select the image. Try again.",
+      "Could not connect to the server. Check your internet connection.",
+      "Could not get a response. Please try again.",
+      "No languages found."
+    ]
+  },
+  {
+    code: "fr", name: "Français", rtl: false,
+    v: [
+      "En ligne", "Nouvelle conversation", "Choisir la langue",
+      "Rechercher des langues...", "Écrivez votre message...", "Envoyer",
+      "Joindre une image", "Supprimer l’image", "Sources",
+      "Réflexion en cours...", "Bonjour ! Je suis Alaa :)",
+      "Posez-moi une question ou joignez une image pour mieux la comprendre.",
+      "Décrivez cette image et expliquez ce qui est visible.",
+      "L’image dépasse 4 Mo. Choisissez une image plus petite.",
+      "Format non pris en charge. Utilisez JPG, PNG ou WebP.",
+      "Impossible de sélectionner l’image. Réessayez.",
+      "Connexion au serveur impossible. Vérifiez Internet.",
+      "Impossible d’obtenir une réponse. Réessayez.",
+      "Aucune langue trouvée."
+    ]
+  },
+  {
+    code: "es", name: "Español", rtl: false,
+    v: [
+      "En línea", "Nuevo chat", "Elegir idioma", "Buscar idiomas...",
+      "Escribe tu mensaje...", "Enviar", "Adjuntar imagen", "Quitar imagen",
+      "Fuentes", "Pensando...", "¡Hola! Soy Alaa :)",
+      "Pregúntame lo que quieras o adjunta una imagen para entenderla.",
+      "Describe esta imagen y explica lo que aparece.",
+      "La imagen supera los 4 MB. Elige una más pequeña.",
+      "Formato no compatible. Usa JPG, PNG o WebP.",
+      "No se pudo seleccionar la imagen. Inténtalo de nuevo.",
+      "No se pudo conectar al servidor. Comprueba Internet.",
+      "No se pudo obtener una respuesta. Inténtalo de nuevo.",
+      "No se encontraron idiomas."
+    ]
+  },
+  {
+    code: "de", name: "Deutsch", rtl: false,
+    v: [
+      "Jetzt online", "Neuer Chat", "Sprache wählen", "Sprachen suchen...",
+      "Nachricht eingeben...", "Senden", "Bild anhängen", "Bild entfernen",
+      "Quellen", "Denke nach...", "Hallo! Ich bin Alaa :)",
+      "Stelle eine Frage oder füge ein Bild hinzu, damit ich es erklären kann.",
+      "Beschreibe dieses Bild und erkläre, was zu sehen ist.",
+      "Das Bild ist größer als 4 MB. Wähle ein kleineres Bild.",
+      "Nicht unterstütztes Format. Verwende JPG, PNG oder WebP.",
+      "Bild konnte nicht ausgewählt werden. Bitte erneut versuchen.",
+      "Verbindung zum Server fehlgeschlagen. Prüfe das Internet.",
+      "Keine Antwort erhalten. Bitte erneut versuchen.",
+      "Keine Sprachen gefunden."
+    ]
+  },
+  {
+    code: "it", name: "Italiano", rtl: false,
+    v: [
+      "Online ora", "Nuova chat", "Scegli la lingua", "Cerca lingue...",
+      "Scrivi il tuo messaggio...", "Invia", "Allega immagine",
+      "Rimuovi immagine", "Fonti", "Sto pensando...", "Ciao! Sono Alaa :)",
+      "Fammi una domanda o allega un'immagine per comprenderla meglio.",
+      "Descrivi questa immagine e spiega cosa mostra.",
+      "L'immagine supera 4 MB. Scegline una più piccola.",
+      "Formato non supportato. Usa JPG, PNG o WebP.",
+      "Impossibile selezionare l'immagine. Riprova.",
+      "Impossibile connettersi al server. Controlla Internet.",
+      "Impossibile ottenere una risposta. Riprova.",
+      "Nessuna lingua trovata."
+    ]
+  },
+  {
+    code: "pt", name: "Português", rtl: false,
+    v: [
+      "Online agora", "Nova conversa", "Escolher idioma",
+      "Pesquisar idiomas...", "Escreva sua mensagem...", "Enviar",
+      "Anexar imagem", "Remover imagem", "Fontes", "Pensando...",
+      "Olá! Sou Alaa :)", "Faça uma pergunta ou anexe uma imagem para entendê-la.",
+      "Descreva esta imagem e explique o que aparece.",
+      "A imagem excede 4 MB. Escolha uma imagem menor.",
+      "Formato não suportado. Use JPG, PNG ou WebP.",
+      "Não foi possível selecionar a imagem. Tente novamente.",
+      "Não foi possível conectar ao servidor. Verifique a internet.",
+      "Não foi possível obter uma resposta. Tente novamente.",
+      "Nenhum idioma encontrado."
+    ]
+  },
+  {
+    code: "tr", name: "Türkçe", rtl: false,
+    v: [
+      "Şu anda çevrimiçi", "Yeni sohbet", "Dil seç", "Dil ara...",
+      "Mesajını yaz...", "Gönder", "Görsel ekle", "Görseli kaldır",
+      "Kaynaklar", "Düşünüyor...", "Merhaba! Ben Alaa :)",
+      "Bana bir soru sor veya anlamana yardımcı olmam için bir görsel ekle.",
+      "Bu görseli açıkla ve neler gösterdiğini anlat.",
+      "Görsel 4 MB'dan büyük. Daha küçük bir görsel seç.",
+      "Desteklenmeyen biçim. JPG, PNG veya WebP kullan.",
+      "Görsel seçilemedi. Lütfen tekrar dene.",
+      "Sunucuya bağlanılamadı. İnternet bağlantını kontrol et.",
+      "Yanıt alınamadı. Lütfen tekrar dene.",
+      "Dil bulunamadı."
+    ]
+  },
+  {
+    code: "ru", name: "Русский", rtl: false,
+    v: [
+      "В сети", "Новый чат", "Выбрать язык", "Поиск языков...",
+      "Введите сообщение...", "Отправить", "Прикрепить изображение",
+      "Удалить изображение", "Источники", "Думаю...", "Привет! Я Alaa :)",
+      "Задайте вопрос или прикрепите изображение, чтобы я помог его понять.",
+      "Опишите изображение и расскажите, что на нём показано.",
+      "Изображение больше 4 МБ. Выберите изображение меньшего размера.",
+      "Формат не поддерживается. Используйте JPG, PNG или WebP.",
+      "Не удалось выбрать изображение. Попробуйте снова.",
+      "Не удалось подключиться к серверу. Проверьте интернет.",
+      "Не удалось получить ответ. Попробуйте снова.",
+      "Языки не найдены."
+    ]
+  },
+  {
+    code: "zh-CN", name: "简体中文", rtl: false,
+    v: [
+      "在线", "新对话", "选择语言", "搜索语言...",
+      "输入消息...", "发送", "附加图片", "移除图片",
+      "来源", "正在思考...", "你好！我是 Alaa :)",
+      "你可以提问，也可以附加图片让我帮你理解。",
+      "描述这张图片并解释其中的内容。",
+      "图片超过 4 MB，请选择较小的图片。",
+      "不支持此格式。请使用 JPG、PNG 或 WebP。",
+      "无法选择图片，请重试。",
+      "无法连接服务器，请检查网络。",
+      "无法获取回复，请重试。",
+      "未找到语言。"
+    ]
+  },
+  {
+    code: "zh-TW", name: "繁體中文", rtl: false,
+    v: [
+      "目前在線", "新對話", "選擇語言", "搜尋語言...",
+      "輸入訊息...", "傳送", "附加圖片", "移除圖片",
+      "來源", "思考中...", "你好！我是 Alaa :)",
+      "你可以提問，也可以附加圖片讓我幫你理解。",
+      "描述這張圖片並解釋其中的內容。",
+      "圖片超過 4 MB，請選擇較小的圖片。",
+      "不支援此格式。請使用 JPG、PNG 或 WebP。",
+      "無法選擇圖片，請再試一次。",
+      "無法連線至伺服器，請檢查網路。",
+      "無法取得回覆，請再試一次。",
+      "找不到語言。"
+    ]
+  },
+  {
+    code: "ja", name: "日本語", rtl: false,
+    v: [
+      "オンライン", "新しいチャット", "言語を選択", "言語を検索...",
+      "メッセージを入力...", "送信", "画像を添付", "画像を削除",
+      "ソース", "考え中...", "こんにちは！Alaa :) です",
+      "質問したり、画像を添付して内容の説明を求めたりできます。",
+      "この画像を説明し、何が写っているか教えてください。",
+      "画像が4MBを超えています。小さい画像を選んでください。",
+      "未対応形式です。JPG、PNG、WebPを使用してください。",
+      "画像を選択できませんでした。もう一度お試しください。",
+      "サーバーに接続できません。ネットワークを確認してください。",
+      "回答を取得できませんでした。もう一度お試しください。",
+      "言語が見つかりません。"
+    ]
+  },
+  {
+    code: "ko", name: "한국어", rtl: false,
+    v: [
+      "온라인", "새 채팅", "언어 선택", "언어 검색...",
+      "메시지를 입력하세요...", "보내기", "이미지 첨부",
+      "이미지 삭제", "출처", "생각 중...", "안녕하세요! Alaa입니다 :)",
+      "질문을 하거나 이미지를 첨부하여 내용을 알아볼 수 있습니다.",
+      "이 이미지를 설명하고 무엇이 보이는지 알려주세요.",
+      "이미지가 4MB보다 큽니다. 더 작은 이미지를 선택하세요.",
+      "지원되지 않는 형식입니다. JPG, PNG 또는 WebP를 사용하세요.",
+      "이미지를 선택하지 못했습니다. 다시 시도하세요.",
+      "서버에 연결할 수 없습니다. 인터넷을 확인하세요.",
+      "답변을 가져오지 못했습니다. 다시 시도하세요.",
+      "언어를 찾을 수 없습니다."
+    ]
+  },
+  {
+    code: "hi", name: "हिन्दी", rtl: false,
+    v: [
+      "अभी ऑनलाइन", "नई चैट", "भाषा चुनें", "भाषाएँ खोजें...",
+      "अपना संदेश लिखें...", "भेजें", "चित्र जोड़ें", "चित्र हटाएँ",
+      "स्रोत", "सोच रहा हूँ...", "नमस्ते! मैं Alaa हूँ :)",
+      "कोई प्रश्न पूछें या समझने में मदद के लिए चित्र जोड़ें।",
+      "इस चित्र का वर्णन करें और बताएं कि इसमें क्या दिख रहा है।",
+      "चित्र 4 MB से बड़ा है। छोटा चित्र चुनें।",
+      "यह प्रारूप समर्थित नहीं है। JPG, PNG या WebP इस्तेमाल करें।",
+      "चित्र नहीं चुना जा सका। फिर से प्रयास करें।",
+      "सर्वर से कनेक्ट नहीं हो सका। इंटरनेट जाँचें।",
+      "उत्तर नहीं मिल सका। फिर से प्रयास करें।",
+      "कोई भाषा नहीं मिली।"
+    ]
+  },
+  {
+    code: "ur", name: "اردو", rtl: true,
+    v: [
+      "ابھی آن لائن", "نئی گفتگو", "زبان منتخب کریں", "زبان تلاش کریں...",
+      "اپنا پیغام لکھیں...", "بھیجیں", "تصویر منسلک کریں",
+      "تصویر ہٹائیں", "ذرائع", "سوچ رہا ہوں...", "سلام! میں Alaa ہوں :)",
+      "سوال پوچھیں یا تصویر منسلک کریں تاکہ میں اسے سمجھنے میں مدد دوں۔",
+      "اس تصویر کی وضاحت کریں اور بتائیں کہ اس میں کیا دکھائی دیتا ہے۔",
+      "تصویر 4 MB سے بڑی ہے۔ چھوٹی تصویر منتخب کریں۔",
+      "یہ فارمیٹ سپورٹ نہیں ہے۔ JPG، PNG یا WebP استعمال کریں۔",
+      "تصویر منتخب نہیں ہو سکی۔ دوبارہ کوشش کریں۔",
+      "سرور سے رابطہ نہیں ہو سکا۔ انٹرنیٹ چیک کریں۔",
+      "جواب حاصل نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
+      "کوئی زبان نہیں ملی۔"
+    ]
+  },
+  {
+    code: "bn", name: "বাংলা", rtl: false,
+    v: [
+      "এখন অনলাইন", "নতুন চ্যাট", "ভাষা নির্বাচন করুন", "ভাষা খুঁজুন...",
+      "আপনার বার্তা লিখুন...", "পাঠান", "ছবি সংযুক্ত করুন",
+      "ছবি সরান", "সূত্র", "ভাবছি...", "হ্যালো! আমি Alaa :)",
+      "প্রশ্ন করুন বা বুঝতে সাহায্যের জন্য একটি ছবি সংযুক্ত করুন।",
+      "ছবিটি বর্ণনা করুন এবং এতে কী দেখা যাচ্ছে তা ব্যাখ্যা করুন।",
+      "ছবিটি 4 MB-এর বেশি। ছোট ছবি বেছে নিন।",
+      "এই ফরম্যাট সমর্থিত নয়। JPG, PNG বা WebP ব্যবহার করুন।",
+      "ছবি নির্বাচন করা যায়নি। আবার চেষ্টা করুন।",
+      "সার্ভারে সংযোগ করা যায়নি। ইন্টারনেট পরীক্ষা করুন।",
+      "উত্তর পাওয়া যায়নি। আবার চেষ্টা করুন।",
+      "কোনো ভাষা পাওয়া যায়নি।"
+    ]
+  },
+  {
+    code: "id", name: "Bahasa Indonesia", rtl: false,
+    v: [
+      "Sedang online", "Obrolan baru", "Pilih bahasa", "Cari bahasa...",
+      "Ketik pesan Anda...", "Kirim", "Lampirkan gambar",
+      "Hapus gambar", "Sumber", "Sedang berpikir...", "Hai! Saya Alaa :)",
+      "Ajukan pertanyaan atau lampirkan gambar agar saya membantu memahaminya.",
+      "Jelaskan gambar ini dan terangkan apa yang terlihat.",
+      "Gambar lebih besar dari 4 MB. Pilih gambar yang lebih kecil.",
+      "Format tidak didukung. Gunakan JPG, PNG, atau WebP.",
+      "Gambar tidak dapat dipilih. Coba lagi.",
+      "Tidak dapat terhubung ke server. Periksa internet.",
+      "Jawaban tidak dapat diperoleh. Coba lagi.",
+      "Bahasa tidak ditemukan."
+    ]
+  },
+  {
+    code: "ms", name: "Bahasa Melayu", rtl: false,
+    v: [
+      "Dalam talian sekarang", "Sembang baharu", "Pilih bahasa",
+      "Cari bahasa...", "Taip mesej anda...", "Hantar",
+      "Lampirkan imej", "Buang imej", "Sumber", "Sedang berfikir...",
+      "Hai! Saya Alaa :)", "Tanya soalan atau lampirkan imej supaya saya dapat membantu memahaminya.",
+      "Huraikan imej ini dan jelaskan perkara yang kelihatan.",
+      "Imej melebihi 4 MB. Pilih imej yang lebih kecil.",
+      "Format tidak disokong. Gunakan JPG, PNG atau WebP.",
+      "Imej tidak dapat dipilih. Cuba lagi.",
+      "Tidak dapat menyambung ke pelayan. Semak internet.",
+      "Jawapan tidak dapat diperoleh. Cuba lagi.",
+      "Tiada bahasa ditemui."
+    ]
+  },
+  {
+    code: "th", name: "ไทย", rtl: false,
+    v: [
+      "ออนไลน์อยู่", "แชตใหม่", "เลือกภาษา", "ค้นหาภาษา...",
+      "พิมพ์ข้อความ...", "ส่ง", "แนบรูปภาพ", "ลบรูปภาพ",
+      "แหล่งที่มา", "กำลังคิด...", "สวัสดี! ฉันคือ Alaa :)",
+      "ถามคำถามหรือแนบรูปภาพเพื่อให้ช่วยอธิบายได้",
+      "อธิบายภาพนี้และบอกว่ามีอะไรอยู่ในภาพ",
+      "รูปภาพมีขนาดเกิน 4 MB โปรดเลือกรูปที่เล็กกว่า",
+      "ไม่รองรับรูปแบบนี้ โปรดใช้ JPG, PNG หรือ WebP",
+      "เลือกรูปภาพไม่ได้ โปรดลองอีกครั้ง",
+      "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ โปรดตรวจสอบอินเทอร์เน็ต",
+      "รับคำตอบไม่ได้ โปรดลองอีกครั้ง",
+      "ไม่พบภาษา"
+    ]
+  },
+  {
+    code: "vi", name: "Tiếng Việt", rtl: false,
+    v: [
+      "Đang trực tuyến", "Trò chuyện mới", "Chọn ngôn ngữ",
+      "Tìm ngôn ngữ...", "Nhập tin nhắn...", "Gửi", "Đính kèm ảnh",
+      "Xóa ảnh", "Nguồn", "Đang suy nghĩ...", "Xin chào! Tôi là Alaa :)",
+      "Hãy đặt câu hỏi hoặc đính kèm ảnh để tôi giúp bạn hiểu ảnh.",
+      "Mô tả hình ảnh này và giải thích những gì xuất hiện trong ảnh.",
+      "Ảnh lớn hơn 4 MB. Hãy chọn ảnh nhỏ hơn.",
+      "Định dạng không được hỗ trợ. Dùng JPG, PNG hoặc WebP.",
+      "Không thể chọn ảnh. Vui lòng thử lại.",
+      "Không thể kết nối máy chủ. Hãy kiểm tra Internet.",
+      "Không thể nhận câu trả lời. Vui lòng thử lại.",
+      "Không tìm thấy ngôn ngữ."
+    ]
+  },
+  {
+    code: "fa", name: "فارسی", rtl: true,
+    v: [
+      "اکنون آنلاین", "گفتگوی جدید", "انتخاب زبان", "جستجوی زبان...",
+      "پیام خود را بنویسید...", "ارسال", "پیوست تصویر", "حذف تصویر",
+      "منابع", "در حال فکر کردن...", "سلام! من Alaa هستم :)",
+      "سؤال بپرسید یا تصویری پیوست کنید تا در درک آن کمک کنم.",
+      "این تصویر را توصیف کنید و بگویید چه چیزی در آن دیده می‌شود.",
+      "تصویر بیش از ۴ مگابایت است. تصویر کوچک‌تری انتخاب کنید.",
+      "این قالب پشتیبانی نمی‌شود. از JPG، PNG یا WebP استفاده کنید.",
+      "انتخاب تصویر ممکن نشد. دوباره تلاش کنید.",
+      "اتصال به سرور ممکن نیست. اینترنت را بررسی کنید.",
+      "دریافت پاسخ ممکن نشد. دوباره تلاش کنید.",
+      "زبانی پیدا نشد."
+    ]
+  },
+  {
+    code: "he", name: "עברית", rtl: true,
+    v: [
+      "מחובר עכשיו", "צ'אט חדש", "בחירת שפה", "חיפוש שפות...",
+      "כתבו הודעה...", "שליחה", "צירוף תמונה", "הסרת תמונה",
+      "מקורות", "חושב...", "שלום! אני Alaa :)",
+      "אפשר לשאול שאלה או לצרף תמונה כדי שאעזור להבין אותה.",
+      "תאר את התמונה והסבר מה מופיע בה.",
+      "התמונה גדולה מ־4 MB. בחר תמונה קטנה יותר.",
+      "הפורמט אינו נתמך. יש להשתמש ב־JPG, PNG או WebP.",
+      "לא ניתן לבחור את התמונה. נסו שוב.",
+      "לא ניתן להתחבר לשרת. בדקו את האינטרנט.",
+      "לא ניתן לקבל תשובה. נסו שוב.",
+      "לא נמצאו שפות."
+    ]
+  },
+  {
+    code: "nl", name: "Nederlands", rtl: false,
+    v: [
+      "Nu online", "Nieuwe chat", "Taal kiezen", "Talen zoeken...",
+      "Typ je bericht...", "Verzenden", "Afbeelding toevoegen",
+      "Afbeelding verwijderen", "Bronnen", "Aan het nadenken...",
+      "Hoi! Ik ben Alaa :)", "Stel een vraag of voeg een afbeelding toe zodat ik kan helpen.",
+      "Beschrijf deze afbeelding en leg uit wat erop te zien is.",
+      "De afbeelding is groter dan 4 MB. Kies een kleinere afbeelding.",
+      "Niet-ondersteund formaat. Gebruik JPG, PNG of WebP.",
+      "De afbeelding kon niet worden gekozen. Probeer het opnieuw.",
+      "Kan geen verbinding maken met de server. Controleer internet.",
+      "Er kon geen antwoord worden opgehaald. Probeer opnieuw.",
+      "Geen talen gevonden."
+    ]
+  },
+  {
+    code: "pl", name: "Polski", rtl: false,
+    v: [
+      "Teraz online", "Nowy czat", "Wybierz język", "Szukaj języków...",
+      "Wpisz wiadomość...", "Wyślij", "Dołącz obraz", "Usuń obraz",
+      "Źródła", "Myślę...", "Cześć! Jestem Alaa :)",
+      "Zadaj pytanie lub dołącz obraz, abym pomógł Ci go zrozumieć.",
+      "Opisz ten obraz i wyjaśnij, co przedstawia.",
+      "Obraz przekracza 4 MB. Wybierz mniejszy obraz.",
+      "Nieobsługiwany format. Użyj JPG, PNG lub WebP.",
+      "Nie można wybrać obrazu. Spróbuj ponownie.",
+      "Nie można połączyć się z serwerem. Sprawdź internet.",
+      "Nie udało się uzyskać odpowiedzi. Spróbuj ponownie.",
+      "Nie znaleziono języków."
+    ]
+  },
+  {
+    code: "el", name: "Ελληνικά", rtl: false,
+    v: [
+      "Σε σύνδεση", "Νέα συνομιλία", "Επιλογή γλώσσας",
+      "Αναζήτηση γλωσσών...", "Πληκτρολογήστε μήνυμα...", "Αποστολή",
+      "Επισύναψη εικόνας", "Αφαίρεση εικόνας", "Πηγές",
+      "Σκέφτομαι...", "Γεια! Είμαι το Alaa :)",
+      "Κάντε μια ερώτηση ή επισυνάψτε μια εικόνα για να σας βοηθήσω.",
+      "Περιγράψτε αυτήν την εικόνα και εξηγήστε τι φαίνεται.",
+      "Η εικόνα είναι μεγαλύτερη από 4 MB. Επιλέξτε μικρότερη.",
+      "Μη υποστηριζόμενη μορφή. Χρησιμοποιήστε JPG, PNG ή WebP.",
+      "Δεν ήταν δυνατή η επιλογή εικόνας. Δοκιμάστε ξανά.",
+      "Δεν είναι δυνατή η σύνδεση με τον διακομιστή. Ελέγξτε το διαδίκτυο.",
+      "Δεν ήταν δυνατή η λήψη απάντησης. Δοκιμάστε ξανά.",
+      "Δεν βρέθηκαν γλώσσες."
+    ]
+  },
+  {
+    code: "ro", name: "Română", rtl: false,
+    v: [
+      "Online acum", "Chat nou", "Alege limba", "Caută limbi...",
+      "Scrie mesajul...", "Trimite", "Atașează imagine",
+      "Elimină imaginea", "Surse", "Mă gândesc...",
+      "Salut! Sunt Alaa :)", "Pune o întrebare sau atașează o imagine ca să te ajut să o înțelegi.",
+      "Descrie această imagine și explică ce se vede.",
+      "Imaginea depășește 4 MB. Alege o imagine mai mică.",
+      "Format neacceptat. Folosește JPG, PNG sau WebP.",
+      "Imaginea nu a putut fi selectată. Încearcă din nou.",
+      "Conectarea la server a eșuat. Verifică internetul.",
+      "Nu s-a putut obține un răspuns. Încearcă din nou.",
+      "Nu s-au găsit limbi."
+    ]
+  },
 ];
 
-const STORAGE_KEY = "alaa-selected-language-v1";
+function getTranslation(code) {
+  const language = LANGUAGES.find((item) => item.code === code);
+  return language?.v || LANGUAGES[1].v;
+}
+
+function safeSourceUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      return url.href;
+    }
+  } catch {}
+  return null;
+}
 
 export default function App() {
-  const [selectedLanguage, setSelectedLanguage] = useState("ar");
-  const [languageLoaded, setLanguageLoaded] = useState(false);
+  const [languageCode, setLanguageCode] = useState("ar");
   const [languageModal, setLanguageModal] = useState(false);
-  const [languageSearch, setLanguageSearch] = useState("");
+  const [languageQuery, setLanguageQuery] = useState("");
 
   const [messages, setMessages] = useState([]);
-  const [draft, setDraft] = useState("");
+  const [input, setInput] = useState("");
   const [pendingImage, setPendingImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const scrollRef = useRef(null);
 
-  const language = LANGUAGES.find(
-    (item) => item.code === selectedLanguage
-  ) || LANGUAGES[0];
+  const language =
+    LANGUAGES.find((item) => item.code === languageCode) || LANGUAGES[0];
 
-  const t = useMemo(() => {
-    const keys = [
-      "online",
-      "placeholder",
-      "send",
-      "attach",
-      "remove",
-      "sources",
-      "newChat",
-      "chooseLanguage",
-      "searchLanguage",
-      "thinking",
-      "welcome",
-      "error",
-      "imageTooLarge",
-      "empty",
-    ];
-
-    return {
-      ...Object.fromEntries(
-        keys.map((key, index) => [key, language.v[index]])
-      ),
-      rtl: language.rtl,
-    };
-  }, [language]);
+  const t = getTranslation(languageCode);
+  const isRTL = language.rtl;
+  const direction = isRTL ? "row-reverse" : "row";
+  const alignment = isRTL ? "right" : "left";
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((value) => {
-        if (LANGUAGES.some((item) => item.code === value)) {
-          setSelectedLanguage(value);
+    AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)
+      .then((stored) => {
+        if (LANGUAGES.some((item) => item.code === stored)) {
+          setLanguageCode(stored);
         }
       })
-      .catch(() => {})
-      .finally(() => setLanguageLoaded(true));
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (languageLoaded) {
-      AsyncStorage.setItem(STORAGE_KEY, selectedLanguage)
-        .catch(() => {});
-    }
-  }, [selectedLanguage, languageLoaded]);
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollToEnd?.({ animated: true });
+    }, 100);
 
-  const filteredLanguages = LANGUAGES.filter((item) =>
-    item.name.toLowerCase().includes(languageSearch.trim().toLowerCase())
-  );
+    return () => clearTimeout(timer);
+  }, [messages, loading]);
 
-  async function chooseImage() {
+  const filteredLanguages = useMemo(() => {
+    const query = languageQuery.trim().toLocaleLowerCase();
+
+    if (!query) return LANGUAGES;
+
+    return LANGUAGES.filter((item) =>
+      `${item.name} ${item.code}`.toLocaleLowerCase().includes(query)
+    );
+  }, [languageQuery]);
+
+  async function changeLanguage(code) {
+    setLanguageCode(code);
+    setLanguageModal(false);
+    setLanguageQuery("");
     setError("");
 
     try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      await AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, code);
+    } catch {
+      // The selected language remains active for this session.
+    }
+  }
 
-      if (!permission.granted) {
-        setError("Please allow photo library access.");
-        return;
-      }
+  async function pickImage() {
+    setError("");
 
+    try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
+        allowsEditing: false,
         base64: true,
         quality: 0.75,
-        allowsEditing: false,
       });
 
-      if (result.canceled || !result.assets?.length) return;
+      if (result.canceled) return;
 
-      const asset = result.assets[0];
-      const mimeType = asset.mimeType || "image/jpeg";
-      const base64 = asset.base64;
+      const asset = result.assets?.[0];
 
-      if (!base64) {
-        setError("Could not read the selected image.");
+      if (!asset?.uri || !asset?.base64) {
+        setError(t[15]);
         return;
       }
 
-      if (asset.fileSize && asset.fileSize > 4 * 1024 * 1024) {
-        setError(t.imageTooLarge);
-        return;
-      }
+      let mimeType = asset.mimeType;
 
-      if (base64.length > 5600000) {
-        setError(t.imageTooLarge);
-        return;
+      if (!mimeType) {
+        mimeType = /\.png$/i.test(asset.fileName || "")
+          ? "image/png"
+          : /\.webp$/i.test(asset.fileName || "")
+          ? "image/webp"
+          : "image/jpeg";
       }
 
       if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
-        setError("Unsupported image format.");
+        setError(t[14]);
+        return;
+      }
+
+      if (
+        (typeof asset.fileSize === "number" &&
+          asset.fileSize > MAX_IMAGE_BYTES) ||
+        asset.base64.length > MAX_IMAGE_BASE64_LENGTH
+      ) {
+        setError(t[13]);
         return;
       }
 
       setPendingImage({
         uri: asset.uri,
-        base64,
+        base64: asset.base64,
         mimeType,
       });
     } catch {
-      setError("Could not select the image.");
+      setError(t[15]);
     }
   }
 
-  function startNewChat() {
-    setMessages([]);
-    setDraft("");
-    setPendingImage(null);
-    setError("");
+  async function openSource(rawUrl) {
+    const url = safeSourceUrl(rawUrl);
+    if (!url) return;
+
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setError(t[17]);
+    }
   }
 
   async function sendMessage() {
-    const text = draft.trim();
+    const text = input.trim();
 
     if ((!text && !pendingImage) || loading) return;
-
-    setError("");
 
     const userMessage = {
       id: `${Date.now()}-user`,
       role: "user",
-      content: text,
+      content: text || t[12],
       imageUri: pendingImage?.uri || null,
       imageBase64: pendingImage?.base64 || null,
       mimeType: pendingImage?.mimeType || null,
+      sources: [],
     };
 
-    const nextMessages = [...messages, userMessage];
+    const updatedMessages = [...messages, userMessage];
 
-    setMessages(nextMessages);
-    setDraft("");
+    setMessages(updatedMessages);
+    setInput("");
     setPendingImage(null);
+    setError("");
     setLoading(true);
 
     try {
-      const history = nextMessages
-        .slice(-12)
-        .map((item) => ({
-          role: item.role,
-          content: item.content || "",
-          ...(item.imageBase64
-            ? {
-                imageBase64: item.imageBase64,
-                mimeType: item.mimeType,
-              }
-            : {}),
-        }));
+      // إرسال آخر 12 رسالة، مع صورة واحدة فقط لتقليل حجم الطلب.
+      const history = updatedMessages.slice(-12);
 
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      let lastImageIndex = -1;
+
+      history.forEach((message, index) => {
+        if (message.imageBase64) lastImageIndex = index;
+      });
+
+      const apiMessages = history.map((message, index) => ({
+        role: message.role,
+        content: message.content || "",
+        ...(message.imageBase64 && index === lastImageIndex
+          ? {
+              imageBase64: message.imageBase64,
+              mimeType: message.mimeType,
+            }
+          : {}),
+      }));
+
+      const baseUrl = API_BASE_URL.replace(/\/+$/, "");
+
+      const response = await fetch(`${baseUrl}/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: history,
-          language: selectedLanguage,
+          messages: apiMessages,
+          language: languageCode,
         }),
       });
 
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || t.error);
+        throw new Error(data.error || t[17]);
       }
 
-      const assistantMessage = {
-        id: `${Date.now()}-assistant`,
-        role: "assistant",
-        content: data.reply || "",
-        sources: Array.isArray(data.sources) ? data.sources : [],
-        searched: Boolean(data.searched),
-      };
-
-      setMessages((previous) => [...previous, assistantMessage]);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-assistant`,
+          role: "assistant",
+          content:
+            typeof data.reply === "string" ? data.reply : t[17],
+          sources: Array.isArray(data.sources) ? data.sources : [],
+          searched: Boolean(data.searched),
+          searchNotice: data.searchNotice || "",
+        },
+      ]);
     } catch (err) {
-      setError(err.message || t.error);
+      setError(err?.message || t[16]);
     } finally {
       setLoading(false);
     }
   }
 
-  async function openSource(url) {
-    try {
-      const parsed = new URL(url);
-
-      if (!["https:", "http:"].includes(parsed.protocol)) return;
-
-      await Linking.openURL(parsed.href);
-    } catch {
-      setError(t.error);
-    }
+  function newChat() {
+    setMessages([]);
+    setInput("");
+    setPendingImage(null);
+    setError("");
   }
 
-  const rowDirection = t.rtl ? "row-reverse" : "row";
-  const textDirection = t.rtl ? "right" : "left";
-
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={styles.root}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={[styles.header, { flexDirection: rowDirection }]}>
-          <View style={styles.brand}>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.screen}>
+        <View style={[styles.header, { flexDirection: direction }]}>
+          <View style={{ alignItems: isRTL ? "flex-end" : "flex-start" }}>
             <Text style={styles.logo}>✦ Alaa :)</Text>
-            <Text style={styles.online}>{t.online}</Text>
+            <Text style={styles.status}>{t[0]}</Text>
           </View>
 
-          <View style={[styles.headerButtons, { flexDirection: rowDirection }]}>
+          <View style={[styles.headerActions, { flexDirection: direction }]}>
             <Pressable
-              onPress={() => {
-                setLanguageSearch("");
-                setLanguageModal(true);
-              }}
               style={styles.headerButton}
-              accessibilityLabel={t.chooseLanguage}
+              onPress={() => setLanguageModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t[2]}
             >
-              <Text style={styles.headerButtonText}>🌐 {selectedLanguage.toUpperCase()}</Text>
+              <Text style={styles.headerButtonText}>
+                🌐 {language.code.toUpperCase()}
+              </Text>
             </Pressable>
 
             <Pressable
-              onPress={startNewChat}
               style={styles.headerButton}
-              accessibilityLabel={t.newChat}
+              onPress={newChat}
+              accessibilityRole="button"
             >
-              <Text style={styles.headerButtonText}>＋</Text>
+              <Text style={styles.headerButtonText}>＋ {t[1]}</Text>
             </Pressable>
           </View>
         </View>
 
-        <ScrollView
-          style={styles.chat}
-          contentContainerStyle={styles.chatContent}
-          keyboardShouldPersistTaps="handled"
+        <KeyboardAvoidingView
+          style={styles.body}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          {messages.length === 0 ? (
-            <View style={styles.welcome}>
-              <Text style={styles.welcomeIcon}>✦</Text>
-              <Text
-                style={[
-                  styles.welcomeTitle,
-                  { textAlign: t.rtl ? "right" : "left" },
-                ]}
-              >
-                {t.welcome}
-              </Text>
-              <Text style={styles.welcomeSubtitle}>{t.empty}</Text>
-            </View>
-          ) : null}
+          <ScrollView
+            ref={scrollRef}
+            style={styles.chatScroll}
+            contentContainerStyle={styles.chatContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {messages.length === 0 && (
+              <View style={styles.welcomeCard}>
+                <Text style={styles.welcomeSymbol}>✦</Text>
+                <Text
+                  style={[
+                    styles.welcomeTitle,
+                    { textAlign: alignment },
+                  ]}
+                >
+                  {t[10]}
+                </Text>
+                <Text
+                  style={[
+                    styles.welcomeBody,
+                    { textAlign: alignment },
+                  ]}
+                >
+                  {t[11]}
+                </Text>
+              </View>
+            )}
 
-          {messages.map((item) => (
-            <View
-              key={item.id}
-              style={[
-                styles.messageRow,
-                {
-                  flexDirection: rowDirection,
-                  justifyContent:
-                    item.role === "user" ? "flex-end" : "flex-start",
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.bubble,
-                  item.role === "user"
-                    ? styles.userBubble
-                    : styles.assistantBubble,
-                ]}
-              >
-                {item.imageUri ? (
-                  <Image
-                    source={{ uri: item.imageUri }}
-                    style={styles.messageImage}
-                    resizeMode="cover"
-                    accessibilityLabel="Attached image"
-                  />
-                ) : null}
+            {messages.map((message) => {
+              const isUser = message.role === "user";
 
-                {item.content ? (
-                  <Text
-                    selectable
+              return (
+                <View
+                  key={message.id}
+                  style={[
+                    styles.messageRow,
+                    {
+                      justifyContent: isUser ? "flex-end" : "flex-start",
+                    },
+                  ]}
+                >
+                  <View
                     style={[
-                      styles.messageText,
-                      { textAlign: t.rtl ? "right" : "left" },
+                      styles.bubble,
+                      isUser ? styles.userBubble : styles.aiBubble,
                     ]}
                   >
-                    {item.content}
-                  </Text>
-                ) : null}
+                    {message.imageUri ? (
+                      <Image
+                        source={{ uri: message.imageUri }}
+                        style={styles.chatImage}
+                        resizeMode="cover"
+                      />
+                    ) : null}
 
-                {item.role === "assistant" && item.sources?.length > 0 ? (
-                  <View style={styles.sources}>
-                    <Text style={styles.sourcesTitle}>{t.sources}</Text>
-
-                    {item.sources.map((source, index) => (
-                      <Pressable
-                        key={`${source.url}-${index}`}
-                        onPress={() => openSource(source.url)}
-                        style={styles.sourceLink}
+                    {message.content ? (
+                      <Text
+                        selectable
+                        style={[
+                          styles.messageText,
+                          {
+                            textAlign: alignment,
+                            writingDirection: isRTL ? "rtl" : "ltr",
+                          },
+                        ]}
                       >
-                        <Text style={styles.sourceLinkText}>
-                          {source.title || source.url} ↗
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            </View>
-          ))}
+                        {message.content}
+                      </Text>
+                    ) : null}
 
-          {loading ? (
+                    {!isUser && message.sources?.length > 0 ? (
+                      <View style={styles.sourcesBlock}>
+                        <Text style={styles.sourcesTitle}>{t[8]}</Text>
+
+                        {message.sources.map((source, index) => {
+                          const url = safeSourceUrl(source?.url);
+                          if (!url) return null;
+
+                          return (
+                            <Pressable
+                              key={`${url}-${index}`}
+                              onPress={() => openSource(url)}
+                              style={styles.sourceLink}
+                              accessibilityRole="link"
+                            >
+                              <Text style={styles.sourceText}>
+                                {source.title || url} ↗
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+
+            {loading && (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="#B9A0FF" />
+                <Text style={styles.loadingText}>{t[9]}</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {!!error && (
+            <Pressable
+              style={styles.errorBanner}
+              onPress={() => setError("")}
+            >
+              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.dismissText}>×</Text>
+            </Pressable>
+          )}
+
+          {!!pendingImage && (
             <View
               style={[
-                styles.loading,
-                { flexDirection: rowDirection },
+                styles.pendingImageBar,
+                { flexDirection: direction },
               ]}
             >
-              <ActivityIndicator color="#A78BFA" />
-              <Text style={styles.loadingText}>{t.thinking}</Text>
+              <Image
+                source={{ uri: pendingImage.uri }}
+                style={styles.pendingImage}
+                resizeMode="cover"
+              />
+
+              <Text style={styles.pendingLabel}>{t[6]}</Text>
+
+              <Pressable
+                onPress={() => setPendingImage(null)}
+                accessibilityRole="button"
+                accessibilityLabel={t[7]}
+                style={styles.removeButton}
+              >
+                <Text style={styles.removeButtonText}>×</Text>
+              </Pressable>
             </View>
-          ) : null}
+          )}
 
-          {error ? (
-            <Text style={[styles.errorText, { textAlign: textDirection }]}>
-              {error}
-            </Text>
-          ) : null}
-        </ScrollView>
-
-        {pendingImage ? (
-          <View
-            style={[
-              styles.previewRow,
-              { flexDirection: rowDirection },
-            ]}
-          >
-            <Image
-              source={{ uri: pendingImage.uri }}
-              style={styles.previewImage}
-              resizeMode="cover"
-            />
-            <Pressable
-              onPress={() => setPendingImage(null)}
-              style={styles.removeButton}
+          <View style={styles.composerOuter}>
+            <View
+              style={[
+                styles.composer,
+                { flexDirection: direction },
+              ]}
             >
-              <Text style={styles.removeButtonText}>{t.remove} ✕</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        <View
-          style={[
-            styles.composer,
-            { flexDirection: rowDirection },
-          ]}
-        >
-          <Pressable
-            onPress={chooseImage}
-            style={styles.attachButton}
-            accessibilityLabel={t.attach}
-          >
-            <Text style={styles.attachText}>📎</Text>
-          </Pressable>
-
-          <TextInput
-            style={[
-              styles.input,
-              {
-                textAlign: t.rtl ? "right" : "left",
-                writingDirection: t.rtl ? "rtl" : "ltr",
-              },
-            ]}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={t.placeholder}
-            placeholderTextColor="#9CA3AF"
-            multiline
-            maxLength={MAX_MESSAGE_LENGTH}
-            returnKeyType="default"
-          />
-
-          <Pressable
-            onPress={sendMessage}
-            disabled={loading || (!draft.trim() && !pendingImage)}
-            style={[
-              styles.sendButton,
-              loading ? styles.disabledButton : null,
-            ]}
-            accessibilityLabel={t.send}
-          >
-            <Text style={styles.sendText}>{loading ? "…" : "➤"}</Text>
-          </Pressable>
-        </View>
-
-        <Modal
-          visible={languageModal}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setLanguageModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.languagePanel}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{t.chooseLanguage}</Text>
-                <Pressable onPress={() => setLanguageModal(false)}>
-                  <Text style={styles.closeText}>✕</Text>
-                </Pressable>
-              </View>
+              <Pressable
+                style={styles.attachButton}
+                onPress={pickImage}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel={t[6]}
+              >
+                <Text style={styles.attachIcon}>＋</Text>
+              </Pressable>
 
               <TextInput
-                style={styles.languageSearch}
-                value={languageSearch}
-                onChangeText={setLanguageSearch}
-                placeholder={t.searchLanguage}
-                placeholderTextColor="#9CA3AF"
+                style={[
+                  styles.input,
+                  {
+                    textAlign: alignment,
+                    writingDirection: isRTL ? "rtl" : "ltr",
+                  },
+                ]}
+                value={input}
+                onChangeText={setInput}
+                placeholder={t[4]}
+                placeholderTextColor="#9097B2"
+                multiline
+                maxLength={MAX_MESSAGE_LENGTH}
+                editable={!loading}
+                accessibilityLabel={t[4]}
               />
 
-              <FlatList
-                data={filteredLanguages}
-                keyExtractor={(item) => item.code}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => (
-                  <Pressable
-                    onPress={() => {
-                      setSelectedLanguage(item.code);
-                      setLanguageModal(false);
-                      setError("");
-                    }}
-                    style={[
-                      styles.languageOption,
-                      {
-                        flexDirection: item.rtl ? "row-reverse" : "row",
-                      },
-                    ]}
-                  >
-                    <Text style={styles.languageName}>{item.name}</Text>
-                    <Text style={styles.languageCheck}>
-                      {selectedLanguage === item.code ? "✓" : ""}
-                    </Text>
-                  </Pressable>
-                )}
-                ListEmptyComponent={
-                  <Text style={styles.emptySearch}>{t.empty}</Text>
-                }
-              />
+              <Pressable
+                style={[
+                  styles.sendButton,
+                  loading && styles.disabledButton,
+                ]}
+                onPress={sendMessage}
+                disabled={loading || (!input.trim() && !pendingImage)}
+                accessibilityRole="button"
+                accessibilityLabel={t[5]}
+              >
+                <Text style={styles.sendIcon}>➤</Text>
+              </Pressable>
             </View>
           </View>
-        </Modal>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
+
+      <Modal
+        visible={languageModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setLanguageModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.languageModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t[2]}</Text>
+
+              <Pressable
+                onPress={() => setLanguageModal(false)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.closeButton}>×</Text>
+              </Pressable>
+            </View>
+
+            <TextInput
+              value={languageQuery}
+              onChangeText={setLanguageQuery}
+              placeholder={t[3]}
+              placeholderTextColor="#9097B2"
+              style={[
+                styles.languageSearch,
+                { textAlign: alignment },
+              ]}
+              autoCorrect={false}
+            />
+
+            <ScrollView
+              style={styles.languageList}
+              keyboardShouldPersistTaps="handled"
+            >
+              {filteredLanguages.map((item) => (
+                <Pressable
+                  key={item.code}
+                  onPress={() => changeLanguage(item.code)}
+                  style={[
+                    styles.languageItem,
+                    item.code === languageCode &&
+                      styles.languageItemSelected,
+                    {
+                      flexDirection: item.rtl ? "row-reverse" : "row",
+                    },
+                  ]}
+                >
+                  <Text style={styles.languageName}>{item.name}</Text>
+                  <Text style={styles.languageCheck}>
+                    {item.code === languageCode ? "✓" : ""}
+                  </Text>
+                </Pressable>
+              ))}
+
+              {filteredLanguages.length === 0 && (
+                <Text style={styles.noLanguages}>{t[18]}</Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
+  safeArea: {
     flex: 1,
     backgroundColor: "#090D1B",
   },
-  root: {
+  screen: {
     flex: 1,
     width: "100%",
     maxWidth: 1000,
     alignSelf: "center",
+    backgroundColor: "#090D1B",
   },
   header: {
-    paddingHorizontal: 18,
-    paddingVertical: 15,
+    minHeight: 76,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#242943",
+    borderBottomColor: "#252B45",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-  brand: {
-    gap: 3,
+    gap: 10,
   },
   logo: {
-    color: "#B9A0FF",
-    fontSize: 25,
+    color: "#C4B2FF",
     fontWeight: "800",
+    fontSize: 24,
   },
-  online: {
-    color: "#86E6C3",
+  status: {
+    color: "#A9F0D0",
     fontSize: 12,
+    marginTop: 4,
   },
-  headerButtons: {
+  headerActions: {
     alignItems: "center",
-    gap: 8,
+    gap: 7,
   },
   headerButton: {
-    backgroundColor: "#202641",
+    flexDirection: "row",
+    alignItems: "center",
+    borderColor: "#303654",
     borderWidth: 1,
-    borderColor: "#333B5A",
     borderRadius: 12,
-    paddingHorizontal: 12,
     paddingVertical: 9,
+    paddingHorizontal: 10,
+    backgroundColor: "#151A30",
   },
   headerButtonText: {
-    color: "#FFFFFF",
+    color: "#E8E9F6",
+    fontSize: 12,
     fontWeight: "600",
   },
-  chat: {
+  body: {
+    flex: 1,
+  },
+  chatScroll: {
     flex: 1,
   },
   chatContent: {
     padding: 16,
-    paddingBottom: 24,
+    paddingBottom: 25,
     flexGrow: 1,
   },
-  welcome: {
-    flex: 1,
-    minHeight: 300,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
+  welcomeCard: {
+    width: "100%",
+    maxWidth: 550,
+    alignSelf: "center",
+    marginTop: 45,
+    padding: 24,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: "#2B3150",
+    backgroundColor: "#141A30",
   },
-  welcomeIcon: {
-    fontSize: 40,
+  welcomeSymbol: {
     color: "#B9A0FF",
+    fontSize: 33,
+    marginBottom: 12,
   },
   welcomeTitle: {
-    color: "#FFFFFF",
-    fontSize: 23,
-    fontWeight: "700",
-    textAlign: "center",
+    color: "#F3F1FF",
+    fontSize: 24,
+    fontWeight: "800",
+    marginBottom: 12,
   },
-  welcomeSubtitle: {
-    color: "#9CA3AF",
-    fontSize: 14,
-    textAlign: "center",
+  welcomeBody: {
+    color: "#BFC5DC",
+    fontSize: 15,
+    lineHeight: 24,
   },
   messageRow: {
     width: "100%",
@@ -614,7 +1079,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#6655E8",
     borderBottomRightRadius: 5,
   },
-  assistantBubble: {
+  aiBubble: {
     backgroundColor: "#202641",
     borderBottomLeftRadius: 5,
   },
@@ -623,19 +1088,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
   },
-  messageImage: {
+  chatImage: {
     width: 230,
     height: 230,
-    maxWidth: "100%",
     borderRadius: 12,
     backgroundColor: "#101629",
   },
-  sources: {
-    marginTop: 6,
+  sourcesBlock: {
+    marginTop: 5,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "#454D6A",
-    gap: 8,
+    gap: 7,
   },
   sourcesTitle: {
     color: "#D9CEFF",
@@ -646,64 +1110,86 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingVertical: 4,
   },
-  sourceLinkText: {
+  sourceText: {
     color: "#AFC8FF",
     textDecorationLine: "underline",
     fontSize: 13,
   },
-  loading: {
+  loadingRow: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 10,
     padding: 12,
-    alignSelf: "flex-start",
   },
   loadingText: {
     color: "#B9A0FF",
   },
-  errorText: {
-    color: "#FDA4AF",
-    padding: 8,
-  },
-  previewRow: {
+  errorBanner: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    justifyContent: "space-between",
+    backgroundColor: "#3A1E32",
+    padding: 11,
+    marginHorizontal: 12,
+    marginBottom: 7,
+    borderRadius: 12,
   },
-  previewImage: {
-    width: 66,
-    height: 66,
+  errorText: {
+    color: "#FFD4DD",
+    flex: 1,
+  },
+  dismissText: {
+    color: "#FFD4DD",
+    fontSize: 20,
+    paddingHorizontal: 8,
+  },
+  pendingImageBar: {
+    alignItems: "center",
+    gap: 10,
+    padding: 10,
+  },
+  pendingImage: {
+    width: 60,
+    height: 60,
     borderRadius: 10,
-    backgroundColor: "#202641",
+  },
+  pendingLabel: {
+    color: "#FFFFFF",
+    flex: 1,
   },
   removeButton: {
-    backgroundColor: "#32243B",
+    width: 34,
+    height: 34,
     borderRadius: 10,
-    padding: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#32243B",
   },
   removeButtonText: {
     color: "#FFD4DD",
-    fontSize: 12,
+    fontSize: 23,
   },
-  composer: {
-    alignItems: "flex-end",
-    gap: 8,
+  composerOuter: {
     padding: 12,
-    paddingBottom: Platform.OS === "ios" ? 18 : 12,
     borderTopWidth: 1,
     borderTopColor: "#242943",
     backgroundColor: "#090D1B",
   },
+  composer: {
+    alignItems: "flex-end",
+    gap: 8,
+  },
   attachButton: {
-    backgroundColor: "#202641",
     width: 46,
     height: 46,
     borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#202641",
   },
-  attachText: {
-    fontSize: 22,
+  attachIcon: {
+    color: "#FFFFFF",
+    fontSize: 25,
   },
   input: {
     flex: 1,
@@ -722,46 +1208,45 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 15,
-    backgroundColor: "#8065FF",
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#8065FF",
   },
   disabledButton: {
-    opacity: 0.55,
+    opacity: 0.5,
   },
-  sendText: {
+  sendIcon: {
     color: "#FFFFFF",
     fontSize: 22,
     fontWeight: "bold",
   },
-  modalOverlay: {
+  modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.65)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    padding: 18,
   },
-  languagePanel: {
+  languageModal: {
     maxHeight: "85%",
-    minHeight: "60%",
     backgroundColor: "#131A2E",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderRadius: 22,
     padding: 18,
   },
   modalHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    justifyContent: "space-between",
+    marginBottom: 13,
   },
   modalTitle: {
     color: "#FFFFFF",
     fontSize: 20,
     fontWeight: "700",
   },
-  closeText: {
+  closeButton: {
     color: "#FFFFFF",
-    fontSize: 22,
-    padding: 5,
+    fontSize: 26,
+    paddingHorizontal: 6,
   },
   languageSearch: {
     backgroundColor: "#202641",
@@ -769,16 +1254,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 13,
     paddingVertical: 12,
-    marginBottom: 12,
-    textAlign: "left",
+    marginBottom: 10,
   },
-  languageOption: {
-    justifyContent: "space-between",
+  languageList: {
+    flexGrow: 0,
+  },
+  languageItem: {
     alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 13,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     borderBottomWidth: 1,
     borderBottomColor: "#29314B",
+  },
+  languageItemSelected: {
+    backgroundColor: "#252344",
+    borderRadius: 9,
   },
   languageName: {
     color: "#FFFFFF",
@@ -789,7 +1280,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 18,
   },
-  emptySearch: {
+  noLanguages: {
     color: "#9CA3AF",
     textAlign: "center",
     padding: 20,
