@@ -1,4 +1,4 @@
-
+import React from "react";
 import {
   ActivityIndicator,
   Image,
@@ -1216,30 +1216,30 @@ export default function App() {
   const { width } = useWindowDimensions();
   const showDesktopHistory = width >= 900;
 
-  const [language, setLanguage] = useState("ar");
-  const [languageModalVisible, setLanguageModalVisible] = useState(false);
-  const [languageQuery, setLanguageQuery] = useState("");
+  const [language, setLanguage] = React.useState("ar");
+  const [languageModalVisible, setLanguageModalVisible] = React.useState(false);
+  const [languageQuery, setLanguageQuery] = React.useState("");
 
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
+  const [messages, setMessages] = React.useState([]);
+  const [input, setInput] = React.useState("");
 
-  const [pendingImage, setPendingImage] = useState(null);
-  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingImage, setPendingImage] = React.useState(null);
+  const [pendingFile, setPendingFile] = React.useState(null);
 
-  const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
-  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [attachmentMenuVisible, setAttachmentMenuVisible] = React.useState(false);
+  const [historyModalVisible, setHistoryModalVisible] = React.useState(false);
 
-  const [conversations, setConversations] = useState([]);
-  const [activeConversationId, setActiveConversationId] = useState(null);
-  const [historyReady, setHistoryReady] = useState(false);
+  const [conversations, setConversations] = React.useState([]);
+  const [activeConversationId, setActiveConversationId] = React.useState(null);
+  const [historyReady, setHistoryReady] = React.useState(false);
 
-  const [attachmentError, setAttachmentError] = useState("");
-  const [networkError, setNetworkError] = useState("");
+  const [attachmentError, setAttachmentError] = React.useState("");
+  const [networkError, setNetworkError] = React.useState("");
 
-  const [uploadingFile, setUploadingFile] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [uploadingFile, setUploadingFile] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
 
-  const scrollRef = useRef(null);
+  const scrollRef = React.useRef(null);
 
   const t = getTranslation(language);
 
@@ -1268,7 +1268,7 @@ export default function App() {
   const textAlignment = isRTL ? "right" : "left";
   const baseUrl = API_BASE_URL.replace(/\/+$/, "");
 
-  useEffect(() => {
+  React.useEffect(() => {
     let mounted = true;
 
     async function loadSavedData() {
@@ -1341,13 +1341,13 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!historyReady) return;
 
     AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, language).catch(() => {});
   }, [language, historyReady]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!historyReady) return;
 
     AsyncStorage.setItem(
@@ -1356,7 +1356,7 @@ export default function App() {
     ).catch(() => {});
   }, [conversations, historyReady]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!historyReady) return;
 
     if (activeConversationId) {
@@ -1369,7 +1369,7 @@ export default function App() {
     }
   }, [activeConversationId, historyReady]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const timer = setTimeout(() => {
       scrollRef.current?.scrollToEnd?.({ animated: true });
     }, 100);
@@ -1377,7 +1377,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [messages, loading]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!historyReady || !activeConversationId || messages.length === 0) {
       return;
     }
@@ -1407,7 +1407,7 @@ export default function App() {
     });
   }, [messages, activeConversationId, historyReady, language]);
 
-  const filteredLanguages = useMemo(() => {
+  const filteredLanguages = React.useMemo(() => {
     const query = languageQuery.trim().toLocaleLowerCase();
 
     if (!query) return LANGUAGES;
