@@ -23,9 +23,7 @@ const MAX_IMAGE_BASE64_LENGTH = 5600000;
 const MAX_HISTORY_MESSAGES = 12;
 const MAX_IMAGES_IN_HISTORY = 2;
 
-// يسمح بتحديد النطاقات المسموح لها بالاتصال بالخادم.
-// اترك ALLOWED_ORIGINS فارغًا مؤقتًا إذا كانت واجهتك
-// تستضاف على أكثر من عنوان وتحتاج إلى اختبار الاتصال.
+// إعداد CORS.
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
@@ -47,7 +45,6 @@ app.use(
   })
 );
 
-// يسمح بطلبات الصور المشفرة Base64 ضمن حد حجم محدد.
 app.use(express.json({ limit: "16mb" }));
 
 const IMAGE_TYPES = {
@@ -64,11 +61,9 @@ const ALLOWED_EXTENSIONS = new Set([
   ...Object.keys(IMAGE_TYPES),
 ]);
 
-const ALLOWED_MIME_TYPES = new Set(
-  Object.values(IMAGE_TYPES)
-);
+const ALLOWED_MIME_TYPES = new Set(Object.values(IMAGE_TYPES));
 
-// تعليمات Alaa AI الأصلية من حيث المجالات الأساسية.
+// تعليمات Alaa AI.
 const SYSTEM_INSTRUCTION = `
 أنت Alaa AI، مساعد ذكاء اصطناعي عام متعدد المجالات.
 كن ودودًا وصبورًا ومحترمًا ومباشرًا ودقيقًا.
@@ -161,7 +156,7 @@ const SYSTEM_INSTRUCTION = `
 كن متعاطفًا ومحترمًا، ولا تدّع امتلاك وعي أو مشاعر بشرية.
 `;
 
-// التحقق من المرفقات.
+// إعداد رفع الملفات.
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -194,7 +189,7 @@ const upload = multer({
   },
 });
 
-// التحقق من Base64 وحجم الصورة.
+// التحقق من الصور.
 function normalizeImage(message) {
   let imageBase64 =
     typeof message.imageBase64 === "string"
@@ -214,7 +209,6 @@ function normalizeImage(message) {
     return null;
   }
 
-  // السماح باستقبال Base64 خام أو Data URI.
   if (imageBase64.startsWith("data:")) {
     const commaIndex = imageBase64.indexOf(",");
     if (commaIndex === -1) return null;
@@ -228,8 +222,9 @@ function normalizeImage(message) {
     return null;
   }
 
-  const approximateBytes =
-    Math.floor((imageBase64.length * 3) / 4);
+  const approximateBytes = Math.floor(
+    (imageBase64.length * 3) / 4
+  );
 
   if (approximateBytes > MAX_FILE_SIZE) {
     return null;
@@ -238,7 +233,7 @@ function normalizeImage(message) {
   return { imageBase64, mimeType };
 }
 
-// توحيد تنسيقات الرسائل القديمة والجديدة.
+// توحيد الرسائل الواردة.
 function normalizeIncomingMessages(body) {
   const source = Array.isArray(body?.messages)
     ? body.messages
@@ -283,7 +278,6 @@ function normalizeIncomingMessages(body) {
     })
     .filter(Boolean);
 
-  // دعم الواجهة القديمة التي ترسل message وhistory.
   const currentMessage =
     typeof body?.message === "string"
       ? body.message.trim()
@@ -307,7 +301,6 @@ function normalizeIncomingMessages(body) {
       });
     }
   } else if (body?.imageBase64) {
-    // دعم إرسال صورة وحدها أو صورة مع نص داخل الرسالة الحالية.
     const image = normalizeImage(body);
 
     if (image) {
@@ -323,8 +316,6 @@ function normalizeIncomingMessages(body) {
   }
 
   const limited = messages.slice(-MAX_HISTORY_MESSAGES);
-
-  // لتقليل حجم الطلب، نرسل أحدث صورتين في سجل المحادثة فقط.
   const imageIndexes = [];
 
   limited.forEach((message, index) => {
@@ -345,7 +336,7 @@ function normalizeIncomingMessages(body) {
   return limited;
 }
 
-// تحويل رمز اللغة إلى اسم مفهوم للنموذج.
+// أسماء اللغات.
 const LANGUAGE_NAMES = {
   ar: "Arabic",
   en: "English",
@@ -386,7 +377,7 @@ function getSelectedLanguage(body) {
   return LANGUAGE_NAMES[value] ? value : null;
 }
 
-// استخراج مصادر البحث الحقيقية التي أرجعها Gemini.
+// استخراج المصادر.
 function extractSources(metadata) {
   const chunks = metadata?.groundingChunks || [];
   const seen = new Set();
@@ -419,7 +410,7 @@ function extractSources(metadata) {
   return sources.slice(0, 8);
 }
 
-// إضافة أرقام المصادر للمقاطع التي ربطها Gemini بمصادر فعلية.
+// إضافة الاستشهادات.
 function addInlineCitations(answer, metadata, sources) {
   const chunks = metadata?.groundingChunks || [];
   const supports = metadata?.groundingSupports || [];
@@ -434,9 +425,7 @@ function addInlineCitations(answer, metadata, sources) {
         Number.isInteger(support.segment?.endIndex) &&
         support.segment.endIndex > 0
     )
-    .sort(
-      (a, b) => b.segment.endIndex - a.segment.endIndex
-    );
+    .sort((a, b) => b.segment.endIndex - a.segment.endIndex);
 
   let result = answer;
 
@@ -471,7 +460,51 @@ function addInlineCitations(answer, metadata, sources) {
   return result;
 }
 
-// إرسال طلب Gemini، مع إمكانية تشغيل البحث أو إيقافه.
+// انتظار بين المحاولات.
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// إعادة المحاولة عند 503 فقط.
+// لا نكرر 429 لأن إعادة الطلب لا تعيد الحصة المستنفدة.
+async function fetchGeminiWithRetry(endpoint, payload, apiKey) {
+  const maxAttempts = 3;
+  let response;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(90000),
+    });
+
+    if (response.status !== 503 || attempt === maxAttempts) {
+      return response;
+    }
+
+    try {
+      await response.body?.cancel();
+    } catch {
+      // تجاهل تعذر إغلاق جسم الاستجابة.
+    }
+
+    const delayMs = attempt === 1 ? 1500 : 3000;
+
+    console.warn(
+      `Gemini returned HTTP 503. Retry ${attempt + 1}/${maxAttempts} in ${delayMs}ms.`
+    );
+
+    await sleep(delayMs);
+  }
+
+  return response;
+}
+
+// إرسال طلب Gemini.
 async function requestGemini({
   apiKey,
   contents,
@@ -496,28 +529,22 @@ async function requestGemini({
     payload.tools = [{ google_search: {} }];
   }
 
-  let response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(90000),
-  });
+  let response = await fetchGeminiWithRetry(
+    endpoint,
+    payload,
+    apiKey
+  );
 
   let data = await response.json().catch(() => ({}));
   let searchFallback = false;
 
-  // إذا رفضت الخدمة ميزة البحث نفسها، نحاول طلبًا عاديًا
-  // حتى لا تتعطل الدردشة النصية بسبب عدم توفر البحث.
-  const providerMessage =
-    data?.error?.message || "";
+  const providerMessage = data?.error?.message || "";
 
   const searchFeatureUnavailable =
     /grounding|google.?search|search tool|billing|not available|not supported|unsupported/i
       .test(providerMessage);
 
+  // إذا تعذر البحث نفسه، نحاول طلبًا عاديًا.
   if (
     useSearch &&
     !response.ok &&
@@ -543,15 +570,11 @@ async function requestGemini({
       },
     };
 
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify(fallbackPayload),
-      signal: AbortSignal.timeout(90000),
-    });
+    response = await fetchGeminiWithRetry(
+      endpoint,
+      fallbackPayload,
+      apiKey
+    );
 
     data = await response.json().catch(() => ({}));
   }
@@ -589,72 +612,65 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// رفع الملفات والصور؛ تبقى متوافقة مع الواجهة الحالية.
-app.post(
-  "/upload",
-  upload.single("file"),
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({
-          error: "الرجاء اختيار ملف أولًا.",
-        });
-      }
-
-      const ext = path
-        .extname(req.file.originalname)
-        .toLowerCase();
-
-      const name = path.basename(req.file.originalname);
-
-      if (IMAGE_TYPES[ext]) {
-        return res.json({
-          kind: "image",
-          name,
-          mimeType: IMAGE_TYPES[ext],
-          base64: req.file.buffer.toString("base64"),
-        });
-      }
-
-      let text = "";
-
-      if (ext === ".txt") {
-        text = req.file.buffer.toString("utf8");
-      } else if (ext === ".pdf") {
-        const parsed = await pdfParse(req.file.buffer);
-        text = parsed.text || "";
-      } else if (ext === ".docx") {
-        const parsed = await mammoth.extractRawText({
-          buffer: req.file.buffer,
-        });
-        text = parsed.value || "";
-      }
-
-      text = text.trim();
-
-      if (!text) {
-        return res.status(400).json({
-          error: "لم أعثر على نص قابل للقراءة داخل الملف.",
-        });
-      }
-
-      return res.json({
-        kind: "document",
-        name,
-        text: text.slice(0, MAX_MESSAGE_LENGTH),
-        truncated: text.length > MAX_MESSAGE_LENGTH,
-      });
-    } catch (error) {
-      console.error("File processing error:", error.message);
-
+// رفع الملفات والصور.
+app.post("/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
       return res.status(400).json({
-        error: "تعذرت معالجة الملف. جرّب ملفًا آخر.",
+        error: "الرجاء اختيار ملف أولًا.",
       });
     }
-  }
-);
 
-// الدردشة، تحليل الصور، اللغة المختارة، ومصادر البحث.
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const name = path.basename(req.file.originalname);
+
+    if (IMAGE_TYPES[ext]) {
+      return res.json({
+        kind: "image",
+        name,
+        mimeType: IMAGE_TYPES[ext],
+        base64: req.file.buffer.toString("base64"),
+      });
+    }
+
+    let text = "";
+
+    if (ext === ".txt") {
+      text = req.file.buffer.toString("utf8");
+    } else if (ext === ".pdf") {
+      const parsed = await pdfParse(req.file.buffer);
+      text = parsed.text || "";
+    } else if (ext === ".docx") {
+      const parsed = await mammoth.extractRawText({
+        buffer: req.file.buffer,
+      });
+      text = parsed.value || "";
+    }
+
+    text = text.trim();
+
+    if (!text) {
+      return res.status(400).json({
+        error: "لم أعثر على نص قابل للقراءة داخل الملف.",
+      });
+    }
+
+    return res.json({
+      kind: "document",
+      name,
+      text: text.slice(0, MAX_MESSAGE_LENGTH),
+      truncated: text.length > MAX_MESSAGE_LENGTH,
+    });
+  } catch (error) {
+    console.error("File processing error:", error.message);
+
+    return res.status(400).json({
+      error: "تعذرت معالجة الملف. جرّب ملفًا آخر.",
+    });
+  }
+});
+
+// الدردشة وتحليل الصور والبحث.
 app.post("/chat", async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -678,6 +694,7 @@ app.post("/chat", async (req, res) => {
     }
 
     const selectedLanguage = getSelectedLanguage(req.body);
+
     const languageInstruction = selectedLanguage
       ? `\nلغة واجهة المستخدم المختارة هي ${LANGUAGE_NAMES[selectedLanguage]}. ` +
         "أجب بهذه اللغة عادةً، إلا إذا طلب المستخدم صراحة لغة أخرى."
@@ -732,10 +749,7 @@ ${searchInstruction}
         }
 
         return {
-          role:
-            message.role === "assistant"
-              ? "model"
-              : "user",
+          role: message.role === "assistant" ? "model" : "user",
           parts,
         };
       });
@@ -750,7 +764,6 @@ ${searchInstruction}
     const { response, data, searchFallback } = result;
 
     if (!response.ok) {
-      // لا نسجّل المفتاح السري ولا نعيده إلى الواجهة.
       console.error("Gemini API error:", {
         status: response.status,
         providerStatus: data?.error?.status,
@@ -768,10 +781,19 @@ ${searchInstruction}
         });
       }
 
-      if (
-        response.status === 401 ||
-        response.status === 403
-      ) {
+      if (response.status === 503) {
+        return res.status(503).json({
+          error:
+            "خدمة Gemini مشغولة حاليًا بسبب الضغط. جرّب مرة أخرى بعد قليل.",
+          details: data?.error?.message || "Gemini returned HTTP 503",
+          reply: null,
+          sources: [],
+          searched: false,
+          model: GEMINI_MODEL,
+        });
+      }
+
+      if ([401, 403].includes(response.status)) {
         return res.status(502).json({
           error:
             "مفتاح Gemini غير صالح أو لا يملك الصلاحية المطلوبة.",
@@ -782,19 +804,17 @@ ${searchInstruction}
         });
       }
 
-    
-return res.status(502).json({
-  error: "فشل طلب Gemini.",
-  details:
-    data?.error?.message ||
-    `Gemini returned HTTP ${response.status}`,
-  providerStatus: data?.error?.status || null,
-  model: GEMINI_MODEL,
-  reply: null,
-  sources: [],
-  searched: false,
-});
-
+      return res.status(502).json({
+        error: "فشل طلب Gemini.",
+        details:
+          data?.error?.message ||
+          `Gemini returned HTTP ${response.status}`,
+        providerStatus: data?.error?.status || null,
+        model: GEMINI_MODEL,
+        reply: null,
+        sources: [],
+        searched: false,
+      });
     }
 
     const candidate = data.candidates?.[0];
@@ -849,9 +869,9 @@ return res.status(502).json({
 
     return res.status(502).json({
       error:
-        error.name === "TimeoutError"
-          ? "استغرقت الإجابة وقتًا طويلًا. حاول مرة أخرى."
-          : "تعذر الاتصال بخدمة Gemini السحابية.",
+        error.name === "TimeoutError" || error.name === "AbortError"
+          ? "استغرقت إجابة Gemini وقتًا طويلًا وانتهت المهلة. جرّب مرة أخرى بعد قليل."
+          : "تعذر الاتصال بخدمة Gemini السحابية. تحقق من السجلات وحاول مرة أخرى.",
       reply: null,
       sources: [],
       searched: false,
